@@ -1,0 +1,801 @@
+#include <QApplication>
+#include <QWidget>
+#include <QTimer>
+#include <QMouseEvent>
+#include <QPainter>
+#include <QRandomGenerator>
+#include <deque>
+#include <QPixmap>
+#include <QVector>
+#include <QFile>
+#include <QJsonDocument>
+#include <QJsonParseError>
+#include <QJsonObject>
+#include <QSystemTrayIcon>
+#include <QMenu>
+#include <QAction>
+#include <QMessageBox>
+#include <QPushButton>
+#include <QLabel>
+#include <QVBoxLayout>
+#include <QSlider>
+#include <QDoubleSpinBox>
+#include <QFont>
+#include <QFontDatabase>
+#include <QFileDialog>
+#include <QJsonArray>
+#include <QTabWidget>
+#include <QPropertyAnimation>
+#include <QProcess>
+#define APP_VERSION 4
+
+// TODO
+// make buttons in tab for opening a mini text editor for the style and config and atlas.json
+
+enum class Rank { Small = 0, Medium = 1, Large = 2 };
+enum class Variant { A = 0, B = 1 };
+
+struct Particle {
+    QPointF pos;
+    QPointF velocity;
+    float age = 0.0f;
+    Rank rank;
+    Variant variant;
+};
+
+struct SpriteFrame {
+    QRect rect;
+    QPointF offset;
+};
+
+struct ParticleConfig {
+    float lifetime = 1.0f;
+    float lifeDelta = 1.0f;
+    size_t maxParticles = 1000;
+
+    size_t spawnLimit = 100;
+    float spawnSpeed = 10.0f;
+    float spawnWind = 100.0f;
+    float spawnVX = 0.0f;
+    float spawnVY = 0.0f;
+
+    float friction = 0.9f;
+    float jitter = 25.0f;
+    float wind = 10.0f;
+    float bounce = 1.0f;
+    float gravityX = 0.0f;
+    float gravityY = 10.0f;
+
+    float animSpeed = 10.0f;
+    float shineSpeed = 60.0f;
+    float shinePower = 0.5f;
+    float opacity = 1.0f;
+    float scale = 2.5f;
+
+    float whiteOutline = 0.2f;
+    float blackOutline = 0.1f;
+    float red = 1.0f;
+    float green = 0.6f;
+    float blue = 0.1f;
+
+    QJsonObject toJson() const {
+        QJsonObject o;
+        o["lifetime"] = lifetime;
+        o["lifeDelta"] = lifeDelta;
+        o["maxParticles"] = static_cast<int>(maxParticles);
+
+        o["spawnLimit"] = static_cast<int>(spawnLimit);
+        o["spawnSpeed"] = spawnSpeed;
+        o["spawnWind"] = spawnWind;
+        o["spawnVX"] = spawnVX;
+        o["spawnVY"] = spawnVY;
+
+        o["friction"] = friction;
+        o["jitter"] = jitter;
+        o["wind"] = wind;
+        o["bounce"] = bounce;
+        o["gravityX"] = gravityX;
+        o["gravityY"] = gravityY;
+
+        o["animSpeed"] = animSpeed;
+        o["shineSpeed"] = shineSpeed;
+        o["shinePower"] = shinePower;
+        o["opacity"] = opacity;
+        o["scale"] = scale;
+
+        o["whiteOutline"] = whiteOutline;
+        o["blackOutline"] = blackOutline;
+        o["red"] = red;
+        o["green"] = green;
+        o["blue"] = blue;
+        return o;
+    }
+
+    static int getIntOrDefault(const QJsonObject& o, const QString& key, int def) {
+        return o.contains(key) && o[key].isDouble() ? o[key].toInt(def) : def;
+    }
+
+    static size_t getSizeTOrDefault(const QJsonObject& o, const QString& key, size_t def) {
+        return static_cast<size_t>(getIntOrDefault(o, key, static_cast<int>(def)));
+    }
+
+    static float getFloatOrDefault(const QJsonObject& o, const QString& key, float def) {
+        return o.contains(key) && o[key].isDouble() ? static_cast<float>(o[key].toDouble(def)) : def;
+    }
+
+    void fromJson(const QJsonObject& o) {
+        lifetime     = getFloatOrDefault(o, "lifetime", lifetime);
+        lifeDelta    = getFloatOrDefault(o, "lifeDelta", lifeDelta);
+        maxParticles = getSizeTOrDefault(o, "maxParticles", maxParticles);
+
+        spawnLimit   = getSizeTOrDefault(o, "spawnLimit", spawnLimit);
+        spawnSpeed   = getFloatOrDefault(o, "spawnSpeed", spawnSpeed);
+        spawnWind    = getFloatOrDefault(o, "spawnWind", spawnWind);
+        spawnVX      = getFloatOrDefault(o, "spawnVX", spawnVX);
+        spawnVY      = getFloatOrDefault(o, "spawnVY", spawnVY);
+
+        friction     = getFloatOrDefault(o, "friction", friction);
+        jitter       = getFloatOrDefault(o, "jitter", jitter);
+        wind         = getFloatOrDefault(o, "wind", wind);
+        bounce       = getFloatOrDefault(o, "bounce", bounce);
+        gravityX     = getFloatOrDefault(o, "gravityX", gravityX);
+        gravityY     = getFloatOrDefault(o, "gravityY", gravityY);
+
+        animSpeed    = getFloatOrDefault(o, "animSpeed", animSpeed);
+        shineSpeed   = getFloatOrDefault(o, "shineSpeed", shineSpeed);
+        shinePower   = getFloatOrDefault(o, "shinePower", shinePower);
+        opacity      = getFloatOrDefault(o, "opacity", opacity);
+        scale        = getFloatOrDefault(o, "scale", scale);
+
+        whiteOutline = getFloatOrDefault(o, "whiteOutline", whiteOutline);
+        blackOutline = getFloatOrDefault(o, "blackOutline", blackOutline);
+        red          = getFloatOrDefault(o, "red", red);
+        green        = getFloatOrDefault(o, "green", green);
+        blue         = getFloatOrDefault(o, "blue", blue);
+    }
+};
+
+class CleanSpinBox : public QDoubleSpinBox {
+    Q_OBJECT
+public:
+    enum class Mode {
+        Float,
+        Integer
+    };
+
+    CleanSpinBox(QWidget* parent = nullptr)
+        : QDoubleSpinBox(parent), mode(Mode::Float) {
+        setDecimals(3);
+    }
+
+    void setMode(Mode m) {
+        mode = m;
+        if (mode == Mode::Integer) {
+            setDecimals(0);
+        }
+    }
+
+    Mode getMode() const { return mode; }
+
+protected:
+    QString textFromValue(double value) const override {
+        if (mode == Mode::Integer) {
+            return QString::number(static_cast<int>(value));
+        } else {
+            return QString::number(value, 'g', 5);
+        }
+    }
+
+    double valueFromText(const QString& text) const override {
+        return text.toDouble();
+    }
+
+private:
+    Mode mode;
+};
+
+class CPPoorklMenuWidget : public QWidget {
+    Q_OBJECT
+public:
+    CPPoorklMenuWidget(QWidget* parent = nullptr)
+        : QWidget(parent)
+    {
+        tabs = new QTabWidget(this);
+        QVBoxLayout* layout = new QVBoxLayout(this);
+        layout->addWidget(tabs);
+        setLayout(layout);
+        setWindowFlags(Qt::FramelessWindowHint);
+        // resize(200, 100);
+        show();
+    }
+
+    void addButton(const QString& tabName, const QString& name, std::function<void()> onClick) {
+        auto tabLayout = tabLayouts[tabName];
+        if (!tabLayout) return;
+        QPushButton* btn = new QPushButton(name);
+        connect(btn, &QPushButton::clicked, this, [=]() { onClick(); });
+        tabLayout->addWidget(btn);
+    }
+
+    void addTab(const QString& name) {
+        QWidget* tab = new QWidget();
+        QVBoxLayout* tabLayout = new QVBoxLayout(tab);
+        tab->setLayout(tabLayout);
+        tabs->addTab(tab, name);
+        tabContents[name] = tab;
+        tabLayouts[name] = tabLayout;
+    }
+
+
+    void addFloatControl(const QString& tabName, const QString& name, float min, float max, float step, float& targetVariable) {
+        auto tabLayout = tabLayouts[tabName];
+        if (!tabLayout) return;
+        QWidget* container = new QWidget();
+        QHBoxLayout* rowLayout = new QHBoxLayout(container);
+        rowLayout->setContentsMargins(0, 0, 0, 0);
+
+        QLabel* label = new QLabel(name);
+        label->setAlignment(Qt::AlignRight | Qt::AlignVCenter);
+        rowLayout->addWidget(label);
+
+        CleanSpinBox* spin = new CleanSpinBox();
+        spin->setMode(CleanSpinBox::Mode::Float);
+        spin->setRange(min, max);
+        spin->setSingleStep(step);
+        spin->setValue(targetVariable);
+        rowLayout->addWidget(spin);
+
+        connect(spin, QOverload<double>::of(&QDoubleSpinBox::valueChanged), this,
+                [&, label](double val) {
+                    targetVariable = static_cast<float>(val);
+                    emit parameterChanged();
+                });
+
+        spinboxes.append(spin);
+        tabLayout->addWidget(container);
+    }
+
+    void addIntControl(const QString& tabName, const QString& name, int min, int max, size_t& targetVariable) {
+        auto tabLayout = tabLayouts[tabName];
+        if (!tabLayout) return;
+        QWidget* container = new QWidget();
+        QHBoxLayout* rowLayout = new QHBoxLayout(container);
+        rowLayout->setContentsMargins(0, 0, 0, 0);
+
+        QLabel* label = new QLabel(name);
+        label->setAlignment(Qt::AlignRight | Qt::AlignVCenter);
+
+        rowLayout->addWidget(label);
+
+        CleanSpinBox* spin = new CleanSpinBox();
+        spin->setMode(CleanSpinBox::Mode::Integer);
+        spin->setRange(min, max);
+        spin->setSingleStep(1);
+        spin->setValue(static_cast<int>(targetVariable));
+        rowLayout->addWidget(spin);
+
+        connect(spin, QOverload<double>::of(&QDoubleSpinBox::valueChanged), this,
+                [&, this](double val) {
+                    targetVariable = static_cast<size_t>(val);
+                    emit parameterChanged();
+                });
+
+        spinboxes.append(spin);
+        tabLayout->addWidget(container);
+    }
+
+    void updateSpinboxValues(const QVector<float>& values) {
+        qDebug() << "Reached pointa";
+        for (int i = 0; i < spinboxes.size() && i < values.size(); ++i) {
+            qDebug() << "Reached pointa " << i;
+            spinboxes[i]->blockSignals(true);
+            spinboxes[i]->setValue(values[i]);
+            spinboxes[i]->blockSignals(false);
+        }
+    }
+
+    void addWidgetToTab(const QString& tabName, QWidget* widget) {
+        auto tabLayout = tabLayouts.value(tabName, nullptr);
+        if (tabLayout) {
+            tabLayout->addWidget(widget);
+        }
+    }
+
+protected:
+    QPoint dragStartPos;
+    bool dragging = false;
+    QTabWidget* tabs;
+    QMap<QString, QWidget*> tabContents;
+    QMap<QString, QVBoxLayout*> tabLayouts;
+    QVector<QDoubleSpinBox*> spinboxes;
+
+    void mousePressEvent(QMouseEvent* event) override {
+        if (event->button() == Qt::LeftButton) {
+            dragStartPos = event->globalPosition().toPoint() - frameGeometry().topLeft();
+            dragging = true;
+            event->accept();
+        }
+    }
+
+    void mouseMoveEvent(QMouseEvent* event) override {
+        if (dragging && (event->buttons() & Qt::LeftButton)) {
+            move(event->globalPosition().toPoint() - dragStartPos);
+            event->accept();
+        }
+    }
+
+    void mouseReleaseEvent(QMouseEvent* event) override {
+        if (event->button() == Qt::LeftButton) {
+            dragging = false;
+            event->accept();
+        }
+    }
+signals:
+    void parameterChanged();
+};
+
+class ParticleWidget : public QWidget {
+    Q_OBJECT
+public:
+    ParticleWidget(QWidget* parent = nullptr)
+        : QWidget(parent)
+    {
+        setAttribute(Qt::WA_TransparentForMouseEvents);
+        setAttribute(Qt::WA_TranslucentBackground);
+        setWindowFlags(Qt::FramelessWindowHint | Qt::WindowStaysOnTopHint | Qt::Tool);
+        setFocusPolicy(Qt::StrongFocus);
+
+        loadConfig(QCoreApplication::applicationDirPath() + "/config.json", false);
+        loadSprites(QCoreApplication::applicationDirPath() + "/atlas.png", QCoreApplication::applicationDirPath() + "/atlas.json");
+        loadStyle(QCoreApplication::applicationDirPath() + "/style.qss");
+        loadFont(QCoreApplication::applicationDirPath() + "/font.ttf");
+
+        timer = new QTimer(this);
+        connect(timer, &QTimer::timeout, this, &ParticleWidget::onTimeout);
+        timer->start(16);
+
+        setMouseTracking(true);
+        menu = new CPPoorklMenuWidget();
+        menu->addTab("config");
+        menu->addTab("spawn");
+        menu->addTab("physics");
+        menu->addTab("visual");
+        menu->addTab("atlas");
+        menu->addTab("import");
+        menu->addTab("export");
+        menu->addTab("debug");
+
+        menu->addFloatControl("config", "lifetime", -1e9f, 1e9f, 0.01f, config.lifetime);
+        menu->addFloatControl("config", "lifeDelta", -1e9f, 1e9f, 0.01f, config.lifeDelta);
+        menu->addIntControl("config", "maxParticles", 0, 1e9f, config.maxParticles);
+
+        menu->addIntControl("spawn", "spawnLimit", 0, 1e9f, config.spawnLimit);
+        menu->addFloatControl("spawn", "spawnSpeed", -1e9f, 1e9f, 0.01f, config.spawnSpeed);
+        menu->addFloatControl("spawn", "spawnWind", -1e9f, 1e9f, 0.01f, config.spawnWind);
+        menu->addFloatControl("spawn", "spawnVX", -1e9f, 1e9f, 0.01f, config.spawnVX);
+        menu->addFloatControl("spawn", "spawnVY", -1e9f, 1e9f, 0.01f, config.spawnVY);
+
+        menu->addFloatControl("physics", "friction", 0.0f, 1.0f, 0.01f, config.friction);
+        menu->addFloatControl("physics", "jitter", -1e9f, 1e9f, 0.01f, config.jitter);
+        menu->addFloatControl("physics", "wind", -1e9f, 1e9f, 0.01f, config.wind);
+        menu->addFloatControl("physics", "bounce", -1.0f, 1.0f, 0.01f, config.bounce);
+        menu->addFloatControl("physics", "gravityX", -1e9f, 1e9f, 0.01f, config.gravityX);
+        menu->addFloatControl("physics", "gravityY", -1e9f, 1e9f, 0.01f, config.gravityY);
+
+        menu->addFloatControl("visual", "animSpeed", -1e9f, 1e9f, 0.01f, config.animSpeed);
+        menu->addFloatControl("visual", "shineSpeed", -1e9f, 1e9f, 0.01f, config.shineSpeed);
+        menu->addFloatControl("visual", "shinePower", -1e9f, 1e9f, 0.01f, config.shinePower);
+        menu->addFloatControl("visual", "opacity", 0.0f, 1.0f, 0.01f, config.opacity);
+        menu->addFloatControl("visual", "scale", -1e9f, 1e9f, 0.01f, config.scale);
+
+        menu->addFloatControl("atlas", "whiteOutline", 0.0f, 1.0f, 0.01f, config.whiteOutline);
+        menu->addFloatControl("atlas", "blackOutline", 0.0f, 1.0f, 0.01f, config.blackOutline);
+        menu->addFloatControl("atlas", "red", 0.0f, 1.0f, 0.01f, config.red);
+        menu->addFloatControl("atlas", "green", 0.0f, 1.0f, 0.01f, config.green);
+        menu->addFloatControl("atlas", "blue", 0.0f, 1.0f, 0.01f, config.blue);
+
+        menu->addButton("import", "import config", [this]() { importConfig(); });
+        menu->addButton("import", "import style", [this]() { importStyle(); });
+        menu->addButton("import", "import font", [this]() { importFont(); });
+        menu->addButton("import", "import atlas", [this]() { importSprites(); });
+
+        menu->addButton("export", "export config", [this]() { exportConfig(); });
+        menu->addButton("export", "export style", [this]() { exportStyle(); });
+        menu->addButton("export", "export font", [this]() { exportFont(); });
+        menu->addButton("export", "export atlas", [this]() { exportSprites(); });
+
+        menu->addButton("debug", "restart", [this]() { restartApp(); });
+
+        fpsLabel = new QLabel("FPS: 0");
+        particleCountLabel = new QLabel("Particles: 0");
+        QLabel* versionLabel = new QLabel(QString("Version: %1").arg(APP_VERSION));
+
+        menu->addWidgetToTab("debug", fpsLabel);
+        menu->addWidgetToTab("debug", particleCountLabel);
+        menu->addWidgetToTab("debug", versionLabel);
+
+        frameTimer.start();
+    }
+
+    void exportConfig() {
+        QString path = QFileDialog::getSaveFileName(this, "export config", "", "json files (*.json)");
+        if (path.isEmpty()) return;
+        QFile file(path);
+        if (file.open(QIODevice::WriteOnly)) {
+            file.write(QJsonDocument(config.toJson()).toJson(QJsonDocument::Indented));
+            QMessageBox::information(this, "export", "configuration exported successfully");
+        } else {
+            QMessageBox::warning(this, "export Failed", "could not write config");
+        }
+    }
+
+    void importConfig() {
+        QString path = QFileDialog::getOpenFileName(this, "import config", "", "json files (*.json)");
+        if (path.isEmpty()) return;
+        loadConfig(path, true);
+    }
+
+    void loadConfig(const QString& path, const bool updateSpinboxes) {
+        QFile file(path);
+        if (!file.open(QIODevice::ReadOnly)) return;
+        QJsonParseError err;
+        QJsonDocument doc = QJsonDocument::fromJson(file.readAll(), &err);
+        if (err.error != QJsonParseError::NoError) return;
+        config.fromJson(doc.object());
+        if (updateSpinboxes) {
+            QVector<float> values = {
+                config.lifetime,
+                config.lifeDelta,
+                static_cast<float>(config.maxParticles),
+
+                static_cast<float>(config.spawnLimit),
+                config.spawnSpeed,
+                config.spawnWind,
+                config.spawnVX,
+                config.spawnVY,
+
+                config.friction,
+                config.jitter,
+                config.wind,
+                config.bounce,
+                config.gravityX,
+                config.gravityY,
+
+                config.animSpeed,
+                config.shineSpeed,
+                config.shinePower,
+                config.opacity,
+                config.scale,
+
+                config.whiteOutline,
+                config.blackOutline,
+                config.red,
+                config.green,
+                config.blue
+            };
+            menu->updateSpinboxValues(values);
+        }
+    }
+
+    void exportStyle() {
+        QString path = QFileDialog::getSaveFileName(this, "export style", "", "qss files (*.qss)");
+        if (!path.isEmpty()) {
+            QFile source(QCoreApplication::applicationDirPath() + "/style.qss");
+            if (source.open(QIODevice::ReadOnly)) {
+                QFile dest(path);
+                if (dest.open(QIODevice::WriteOnly)) {
+                    dest.write(source.readAll());
+                }
+            }
+        }
+    }
+
+    void importStyle() {
+        QString path = QFileDialog::getOpenFileName(this, "import style", "", "qss files (*.qss)");
+        if (path.isEmpty()) return;
+        loadStyle(path);
+    }
+
+    void loadStyle(const QString& path) {
+        QFile file(path);
+
+        if (file.open(QIODevice::ReadOnly | QIODevice::Text)) {
+            QString style = file.readAll();
+            QApplication* app = qobject_cast<QApplication*>(QApplication::instance());
+            app->setStyleSheet(style);
+        } else {
+            QMessageBox::warning(this, "style load error", "failed to load style: " + path);
+        }
+    }
+
+    void exportFont() {
+        QMessageBox::warning(this, "not implemented error", "alice too lazy to implement this export font button");
+    }
+
+    void importFont() {
+        QString path = QFileDialog::getOpenFileName(this, "import font", "", "truetypeface files (*.ttf)");
+        if (path.isEmpty()) return;
+        loadFont(path);
+    }
+
+    void loadFont(const QString& path) {
+        int fontId = QFontDatabase::addApplicationFont(path);
+        if (fontId != -1) {
+            QStringList families = QFontDatabase::applicationFontFamilies(fontId);
+            if (!families.isEmpty()) {
+                QFont font(families.first());
+                QApplication::setFont(font);
+            }
+        }
+    }
+
+    void exportSprites() {
+        QMessageBox::warning(this, "not implemented error", "alice too lazy to implement this export atlas button");
+    }
+
+    void importSprites() {
+        QString imagePath = QFileDialog::getOpenFileName(this, "import atlas image", "", "image files (*.png *.jpg)");
+        if (imagePath.isEmpty())
+            return;
+
+        QString jsonPath = QFileDialog::getOpenFileName(this, "import atlas json", "", "json files (*.json)");
+        if (jsonPath.isEmpty())
+            return;
+
+        loadSprites(imagePath, jsonPath);
+    }
+
+    void loadSprites(const QString& atlasPath, const QString& jsonPath) {
+        QImage image;
+        if (!image.load(atlasPath)) {
+            QMessageBox::warning(this, "atlas load error", "failed to load atlas image: " + atlasPath);
+        }
+        QImage shifted = applyColourTransform(image, config.red, config.green, config.blue);
+        atlas = QPixmap::fromImage(shifted);
+
+        QFile file(jsonPath);
+        if (!file.open(QIODevice::ReadOnly)) {
+            QMessageBox::warning(this, "atlas load error", "failed to load atlas json: " + jsonPath);
+            return;
+        }
+
+        QJsonParseError err;
+        QJsonDocument doc = QJsonDocument::fromJson(file.readAll(), &err);
+        if (err.error != QJsonParseError::NoError) {
+            QMessageBox::warning(this, "json parse error", "failed to parse atlas json: " + err.errorString());
+            return;
+        }
+
+        QJsonObject root = doc.object();
+        for (auto it = root.begin(); it != root.end(); ++it) {
+            QString name = it.key();
+            QJsonObject obj = it.value().toObject();
+
+            QRect rect(obj["x"].toInt(), obj["y"].toInt(), obj["w"].toInt(), obj["h"].toInt());
+            QPointF offset(obj["ox"].toDouble(), obj["oy"].toDouble());
+
+            spriteRects[name] = SpriteFrame{ rect, offset };
+        }
+    }
+
+    void restartApp() {
+        QString executable = QCoreApplication::applicationFilePath();
+        QStringList args = QCoreApplication::arguments();
+
+        QProcess::startDetached(executable, args);
+        QCoreApplication::quit();
+    }
+protected:
+    void paintEvent(QPaintEvent*) override {
+        QPainter p(this);
+        p.setRenderHint(QPainter::Antialiasing, false);
+        p.setRenderHint(QPainter::SmoothPixmapTransform, false);
+        p.setCompositionMode(QPainter::CompositionMode_Plus); // PoS composition mode doesn't make glowy 3:<
+        p.setOpacity(config.opacity);
+
+        for (const auto& particle : particles) {
+            float ageRatio = std::max(particle.age / config.lifetime, 0.0f); // accounting for negative life
+            float invAgeRatio = 1.0f - ageRatio;
+            if (ageRatio > 1.0f) continue;
+
+            int frame = static_cast<int>(particle.age * config.animSpeed) % 2; // hardcoded like sprite ranks and variants
+            int originalRank = static_cast<int>(particle.rank);
+            int scaledRank = qBound(0, qRound(originalRank * invAgeRatio), 2);
+
+            QString key = QString("sparkle_%1_%2_%3")
+                              .arg(scaledRank)
+                              .arg(static_cast<int>(particle.variant))
+                              .arg(frame);
+            auto it = spriteRects.find(key);
+            if (it == spriteRects.end()) continue;
+            const SpriteFrame& frameData = it.value();
+
+            float scaledScale = config.scale * invAgeRatio * (1.0f + config.shinePower * std::sin(particle.age * config.shineSpeed)); // 666
+            QRect sourceRect = frameData.rect;
+            QPointF offset = frameData.offset * scaledScale;
+
+            int scaledW = sourceRect.width() * scaledScale;
+            int scaledH = sourceRect.height() * scaledScale;
+
+            QRectF target(particle.pos.x() - offset.x(),
+                          particle.pos.y() - offset.y(),
+                          scaledW, scaledH);
+
+            p.drawPixmap(target, atlas, sourceRect);
+        }
+
+    }
+private slots:
+    void onTimeout() {
+        float dt = frameTimer.restart() / 1000.0f;
+        frameCount++;
+        elapsedTime += dt;
+        if (elapsedTime >= 1.0f) {
+            currentFPS = frameCount;
+            frameCount = 0;
+            elapsedTime = 0.0f;
+        }
+        if (fpsLabel)
+            fpsLabel->setText(QString("FPS: %1").arg(currentFPS));
+        if (particleCountLabel)
+            particleCountLabel->setText(QString("Particles: %1").arg(particles.size()));
+        QPoint globalPos = QCursor::pos();
+        QPoint localPos = mapFromGlobal(globalPos);
+        if (lastPos.isNull()) {
+            lastPos = localPos;
+            lastLastPos = localPos;
+            lastLastLastPos = localPos;
+            return;
+        }
+
+        if (localPos != lastPos) {
+            QPointF delta = catmullRomDerivative(lastLastLastPos,lastLastPos, lastPos, localPos, 0);
+            int count = std::min(int(delta.manhattanLength() / config.spawnSpeed), static_cast<int>(config.spawnLimit)); // should be a euclidean distance function
+
+            for (int i = 0; i < count; ++i) {
+                float t = i / float(count);
+                QPointF pos = catmullRom(lastLastLastPos, lastLastPos, lastPos, localPos, t);
+
+                QPointF vel = (catmullRomDerivative(lastLastLastPos,lastLastPos, lastPos, localPos, t) * config.wind) + (QPointF(
+                                static_cast<float>(QRandomGenerator::global()->generateDouble()-0.5),
+                                static_cast<float>(QRandomGenerator::global()->generateDouble()-0.5)) * config.spawnWind) +
+                              QPointF(config.spawnVX, config.spawnVY);
+
+                Rank rank = static_cast<Rank>(QRandomGenerator::global()->bounded(0, 3));
+                Variant variant = static_cast<Variant>(QRandomGenerator::global()->bounded(0, 2));
+                particles.push_back({ pos, vel, static_cast<float>(QRandomGenerator::global()->generateDouble()-0.5) * config.lifeDelta, rank, variant });
+            }
+
+            while (particles.size() > config.maxParticles)
+                particles.pop_front();
+
+        }
+
+        for (auto& p : particles) {
+            p.velocity += QPointF(
+                static_cast<float>(QRandomGenerator::global()->generateDouble()-0.5) * config.jitter * dt,
+                static_cast<float>(QRandomGenerator::global()->generateDouble()-0.5) * config.jitter * dt);
+
+            p.pos += p.velocity * dt;
+            QRect screenRect = this->rect();
+
+            if (config.bounce > 0.0f) {
+                if (!screenRect.contains(p.pos.toPoint())) {
+                    p.age = config.lifetime + 1.0f; // mark for deletion
+                }
+            } else {
+                if (p.pos.x() < 0.0f) {
+                    p.pos.setX(0.0f);
+                    p.velocity.setX(p.velocity.x() * config.bounce);
+                } else if (p.pos.x() > screenRect.width()) {
+                    p.pos.setX(screenRect.width());
+                    p.velocity.setX(p.velocity.x() * config.bounce);
+                }
+
+                if (p.pos.y() < 0.0f) {
+                    p.pos.setY(0.0f);
+                    p.velocity.setY(p.velocity.y() * config.bounce);
+                } else if (p.pos.y() > screenRect.height()) {
+                    p.pos.setY(screenRect.height());
+                    p.velocity.setY(p.velocity.y() * config.bounce);
+                }
+            }
+
+            p.velocity *= config.friction; // TODO: these should be affected by dt too
+            p.velocity.setX(p.velocity.x() + config.gravityX);
+            p.velocity.setY(p.velocity.y() + config.gravityY);
+            p.age += dt;
+        }
+
+        while (!particles.empty() && particles.front().age > config.lifetime) {
+            particles.pop_front();
+        }
+
+        lastLastLastPos = lastLastPos;
+        lastLastPos = lastPos;
+        lastPos = localPos;
+
+        update();
+    }
+
+private:
+    QPointF catmullRom(QPointF p0, QPointF p1, QPointF p2, QPointF p3, float t) {
+        float t2 = t * t;
+        float t3 = t2 * t;
+
+        return 0.5f * (
+           (2.0f * p1) +
+           (-p0 + p2) * t +
+           (2.0f * p0 - 5.0f * p1 + 4.0f * p2 - p3) * t2 +
+           (-p0 + 3.0f * p1 - 3.0f * p2 + p3) * t3
+        );
+    }
+
+    QPointF catmullRomDerivative(QPointF p0, QPointF p1, QPointF p2, QPointF p3, float t) {
+        float t2 = t * t;
+
+        return 0.5f * (
+           (-p0 + p2) +
+           2.0f * (2.0f * p0 - 5.0f * p1 + 4.0f * p2 - p3) * t +
+           3.0f * (-p0 + 3.0f * p1 - 3.0f * p2 + p3) * t2
+        );
+    }
+
+    QImage applyColourTransform(QImage img, float redFactor, float greenFactor, float blueFactor) {
+        if (img.format() != QImage::Format_RGBA8888) {
+            img = img.convertToFormat(QImage::Format_RGBA8888);
+        }
+
+        uchar* data = img.bits();
+        int numPixels = img.width() * img.height();
+
+        for (int i = 0; i < numPixels; ++i) {
+            int idx = i * 4;
+            uchar r = data[idx];
+            uchar g = data[idx + 1];
+            uchar b = data[idx + 2];
+
+            data[idx]     = std::min(255.0f, g + (redFactor   * r)); // g because r is used as a mask
+            data[idx + 1] = std::min(255.0f, g + (greenFactor * r));
+            data[idx + 2] = std::min(255.0f, b + (blueFactor * r));
+            if (r == 255.0f && g == 255.0f && b == 255.0f) {
+                data[idx + 3] = std::clamp(data[idx + 3] * config.whiteOutline, 0.0f, 255.0f);
+            } else if (r == 0.0f && g == 0.0f && b == 0.0f) {
+                data[idx + 3] = std::clamp(data[idx + 3] * config.blackOutline, 0.0f, 255.0f);
+            }
+        }
+        return img;
+    }
+
+    QTimer* timer;
+    std::deque<Particle> particles; // should probably be some better class than deque, maybe object pooled
+    QPoint lastPos;
+    QPoint lastLastPos;
+    QPoint lastLastLastPos; // peak naming convention
+    QPixmap atlas;
+    CPPoorklMenuWidget* menu;
+    QMap<QString, SpriteFrame> spriteRects;
+    ParticleConfig config;
+    QElapsedTimer frameTimer;
+    int frameCount = 0;
+    float elapsedTime = 0.0f;
+    int currentFPS = 0;
+    QLabel* fpsLabel = nullptr;
+    QLabel* particleCountLabel = nullptr;
+};
+
+int main(int argc, char* argv[]) {
+    QApplication app(argc, argv);
+    try {
+        ParticleWidget w;
+        w.showFullScreen();
+        return app.exec();
+    } catch (const std::exception& e) {
+        QMessageBox::critical(nullptr, "fatal error", e.what());
+    } catch (...) {
+        QMessageBox::critical(nullptr, "fatal error", "unknown exception occurred.");
+    }
+    return app.exec();
+}
+
+#include "main.moc"
