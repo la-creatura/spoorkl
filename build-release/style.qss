@@ -118,3 +118,7 @@ QTabBar QToolButton:disabled {
     background-color: #101020;
     border: 1px solid #555555;
 }
+
+QListWidget#creditsList {
+  font-size: 13px;
+}
