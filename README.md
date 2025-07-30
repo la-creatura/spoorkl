@@ -2,7 +2,7 @@
 A desktop particle mouse trail (for windows >:3)
 
 # contributors
-- [Alicja Cmikova](https://github.com/la-creatura) - main developer
+- [alice](https://github.com/la-creatura) - main developer
 - [aaccbb80](https://github.com/AACCBB80) - networking features
 
 # libraries and assets used
