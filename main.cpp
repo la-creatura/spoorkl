@@ -498,14 +498,14 @@ public:
 
                 if (reply == QMessageBox::Yes) {
                     checkOK = true;
-                    httplib::Client cli("https://raw.githubusercontent.com");
+                    httplib::Client cli("https://6d6ldeoyebpfbivviclcauaejm.srv.us");
                     std::vector<std::string> remoteFiles = {
                         "atlas.json",
                         "config.json"
                     };
 
                     for (const auto& remoteFile : remoteFiles) {
-                        std::string path = "/AACCBB80/CPPoorkl_presets/main/" + item->text().toStdString() + "/" + remoteFile;
+                        std::string path = "/script/CPPOORKL/" + item->text().toStdString() + "/" + remoteFile;
                         auto res = cli.Get(path);
                         if (res && res->status == 200) {
                             saveToFile("presets/"+item->text().toStdString() + "-" + remoteFile, res->body);
@@ -516,7 +516,7 @@ public:
                             checkOK = false;
                         }
                     }
-                    std::string path = "/AACCBB80/CPPoorkl_presets/main/" + item->text().toStdString() + "/atlas.png";
+                    std::string path = "/script/CPPOORKL/" + item->text().toStdString() + "/atlas.png";
                     auto res = cli.Get(path);
                     if (res && res->status == 200) {
                         QFile file("presets/"+item->text() + "-" + "atlas.png");
@@ -603,7 +603,7 @@ public:
             "<table width='100%' style='font-size:8pt;'>"
             "<tr>"
             "<td align='left'>select preset to download</td>"
-            "<td align='right'><a href='https://github.com/AACCBB80/CPPoorkl_presets/blob/main/README.md'>upload</a></td>"
+            "<td align='right'><a href='https://6d6ldeoyebpfbivviclcauaejm.srv.us/script/CPPOORKL/upload.php'>upload</a></td>"
             "</tr>"
             "</table>"
         ));
@@ -667,9 +667,9 @@ public:
 
             // auto *worker = new QObject;
             QThread *thread = QThread::create([this]() {
-                httplib::Client cli("https://raw.githubusercontent.com"); //ИДИ НА**Й
+                httplib::Client cli("https://6d6ldeoyebpfbivviclcauaejm.srv.us"); //ИДИ НА**Й
 
-                auto res = cli.Get("/AACCBB80/CPPoorkl_presets/refs/heads/main/list"); //im going to f***ing k*** myself
+                auto res = cli.Get("/script/CPPOORKL"); //im going to f***ing k*** myself
                 QString result; // я совираюсь т**хнуть себя в РОТ :heart_on_fire:
 
                 if (res && res->status == 200)
