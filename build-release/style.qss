@@ -1,0 +1,120 @@
+QWidget {
+    background-color: #0a0a0f;
+    color: #00f0ff;
+}
+
+QLabel {
+    color: #00f0ff;
+}
+
+CleanSpinBox {
+    background-color: #101020;
+    color: #00ffff;
+    border: 1px solid #00f0ff;
+    border-radius: 4px 0px;
+    padding: 4px;
+    width: 100px;
+}
+
+CleanSpinBox:focus {
+    border: 1px solid #ff00ff;
+}
+
+CleanSpinBox::up-button, CleanSpinBox::down-button { width: 0; height: 0; border: none; }
+
+QGroupBox {
+    border: 1px solid #00f0ff;
+    margin-top: 6px;
+}
+
+QGroupBox::title {
+    subcontrol-origin: margin;
+    subcontrol-position: top center;
+    padding: 0 3px;
+    color: #00f0ff;
+}
+
+QPushButton {
+    background-color: #101020;
+    color: #00ffff;
+    border: 1px solid #00f0ff;
+    padding: 6px;
+    border-radius: 4px 0px;
+}
+
+QPushButton:hover {
+    background-color: #00f0ff;
+    color: #101020;
+    border: 1px solid #ff00ff
+}
+
+QPushButton:pressed {
+    background-color: #ff00ff;
+}
+
+QTabWidget::pane {
+    /* border: 1px solid #00f0ff; */
+    border: none;
+    border-radius: 4px 0px;
+    background-color: #00f0ff;
+}
+
+QTabBar::tab {
+    background: qlineargradient(
+        x1: 0, y1: 0, 
+        x2: 0, y2: 1, 
+        stop: 0 #101020, 
+        stop: 1 #0a0a0f
+    );
+    color: #00f0ff;
+    padding: 6px;
+    border-top: 1px solid #00f0ff;
+    border-left: 1px solid #00f0ff;
+    border-right: 1px solid #00f0ff;
+    border-radius: 4px 0px;
+    margin-left: 2px;
+    margin-right: 2px;
+}
+
+QTabBar::tab:hover {
+    background-color: #00f0ff;
+    border: 1px solid #ff00ff;;
+    color: #101020;
+}
+
+QTabBar::tab:selected {
+    background-color: #ff00ff;
+    color: #101020;
+    border-bottom: 0px solid #ff00ff;
+}
+
+QTabBar::tab:!selected { margin-top: 2px;}
+
+QTabBar::tab:disabled {
+    color: #555555;
+    background-color: #101020;
+    border: 1px solid #555555;
+}
+
+QTabBar QToolButton {
+    background-color: #101020;
+    border: 1px solid #00f0ff;
+    border-radius: 4px 0px;
+}
+
+QTabBar QToolButton:hover {
+    background-color: #00f0ff;
+    color: #101020;
+    border: 1px solid #ff00ff;
+}
+
+QTabBar QToolButton:pressed {
+    background-color: #ff00ff;
+    color: #101020;
+}
+
+QTabBar QToolButton:disabled {
+    color: #555555;
+    background-color: #101020;
+    border: 1px solid #555555;
+}

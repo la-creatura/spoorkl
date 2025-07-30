@@ -4,6 +4,7 @@
 #include <QMouseEvent>
 #include <QPainter>
 #include <QRandomGenerator>
+#include <QElapsedTimer>
 #include <deque>
 #include <QPixmap>
 #include <QVector>
@@ -27,12 +28,31 @@
 #include <QTabWidget>
 #include <QPropertyAnimation>
 #include <QProcess>
-#define APP_VERSION 4
+#include <QListWidget>
+#include <future>
+#include <thread>
+#include <QThread>
+#include <algorithm>
+#include <iostream>
+#include <fstream>
+#include <string>
+#define CPPHTTPLIB_OPENSSL_SUPPORT // fuck you
+#include <openssl/ssl.h> // fuck you
+#include "httplib.h" // and fuck you
+#include <QDesktopServices>
+#include <QFileSystemWatcher>
+
+#ifdef max
+#undef max
+#endif
 
 // TODO
 // make buttons in tab for opening a mini text editor for the style and config and atlas.json
 
+int version = 4;
+
 enum class Rank { Small = 0, Medium = 1, Large = 2 };
+
 enum class Variant { A = 0, B = 1 };
 
 struct Particle {
@@ -111,59 +131,69 @@ struct ParticleConfig {
         return o;
     }
 
-    static int getIntOrDefault(const QJsonObject& o, const QString& key, int def) {
+    static int getIntOrDefault(const QJsonObject &o, const QString &key, int def) {
         return o.contains(key) && o[key].isDouble() ? o[key].toInt(def) : def;
     }
 
-    static size_t getSizeTOrDefault(const QJsonObject& o, const QString& key, size_t def) {
+    static size_t getSizeTOrDefault(const QJsonObject &o, const QString &key, size_t def) {
         return static_cast<size_t>(getIntOrDefault(o, key, static_cast<int>(def)));
     }
 
-    static float getFloatOrDefault(const QJsonObject& o, const QString& key, float def) {
+    static float getFloatOrDefault(const QJsonObject &o, const QString &key, float def) {
         return o.contains(key) && o[key].isDouble() ? static_cast<float>(o[key].toDouble(def)) : def;
     }
 
-    void fromJson(const QJsonObject& o) {
-        lifetime     = getFloatOrDefault(o, "lifetime", lifetime);
-        lifeDelta    = getFloatOrDefault(o, "lifeDelta", lifeDelta);
+    void fromJson(const QJsonObject &o) {
+        lifetime = getFloatOrDefault(o, "lifetime", lifetime);
+        lifeDelta = getFloatOrDefault(o, "lifeDelta", lifeDelta);
         maxParticles = getSizeTOrDefault(o, "maxParticles", maxParticles);
 
-        spawnLimit   = getSizeTOrDefault(o, "spawnLimit", spawnLimit);
-        spawnSpeed   = getFloatOrDefault(o, "spawnSpeed", spawnSpeed);
-        spawnWind    = getFloatOrDefault(o, "spawnWind", spawnWind);
-        spawnVX      = getFloatOrDefault(o, "spawnVX", spawnVX);
-        spawnVY      = getFloatOrDefault(o, "spawnVY", spawnVY);
+        spawnLimit = getSizeTOrDefault(o, "spawnLimit", spawnLimit);
+        spawnSpeed = getFloatOrDefault(o, "spawnSpeed", spawnSpeed);
+        spawnWind = getFloatOrDefault(o, "spawnWind", spawnWind);
+        spawnVX = getFloatOrDefault(o, "spawnVX", spawnVX);
+        spawnVY = getFloatOrDefault(o, "spawnVY", spawnVY);
 
-        friction     = getFloatOrDefault(o, "friction", friction);
-        jitter       = getFloatOrDefault(o, "jitter", jitter);
-        wind         = getFloatOrDefault(o, "wind", wind);
-        bounce       = getFloatOrDefault(o, "bounce", bounce);
-        gravityX     = getFloatOrDefault(o, "gravityX", gravityX);
-        gravityY     = getFloatOrDefault(o, "gravityY", gravityY);
+        friction = getFloatOrDefault(o, "friction", friction);
+        jitter = getFloatOrDefault(o, "jitter", jitter);
+        wind = getFloatOrDefault(o, "wind", wind);
+        bounce = getFloatOrDefault(o, "bounce", bounce);
+        gravityX = getFloatOrDefault(o, "gravityX", gravityX);
+        gravityY = getFloatOrDefault(o, "gravityY", gravityY);
 
-        animSpeed    = getFloatOrDefault(o, "animSpeed", animSpeed);
-        shineSpeed   = getFloatOrDefault(o, "shineSpeed", shineSpeed);
-        shinePower   = getFloatOrDefault(o, "shinePower", shinePower);
-        opacity      = getFloatOrDefault(o, "opacity", opacity);
-        scale        = getFloatOrDefault(o, "scale", scale);
+        animSpeed = getFloatOrDefault(o, "animSpeed", animSpeed);
+        shineSpeed = getFloatOrDefault(o, "shineSpeed", shineSpeed);
+        shinePower = getFloatOrDefault(o, "shinePower", shinePower);
+        scale = getFloatOrDefault(o, "scale", scale);
 
         whiteOutline = getFloatOrDefault(o, "whiteOutline", whiteOutline);
         blackOutline = getFloatOrDefault(o, "blackOutline", blackOutline);
-        red          = getFloatOrDefault(o, "red", red);
-        green        = getFloatOrDefault(o, "green", green);
-        blue         = getFloatOrDefault(o, "blue", blue);
+        red = getFloatOrDefault(o, "red", red);
+        green = getFloatOrDefault(o, "green", green);
+        blue = getFloatOrDefault(o, "blue", blue);
     }
 };
 
+    void saveToFile(const std::string& filename, const std::string& content) {
+        std::ofstream out(filename);
+        if (out) {
+            out << content;
+            out.close();
+        } else {
+            std::cerr << "Failed to open file: " << filename << std::endl;
+        }
+    }
+
 class CleanSpinBox : public QDoubleSpinBox {
     Q_OBJECT
+
 public:
     enum class Mode {
         Float,
         Integer
     };
 
-    CleanSpinBox(QWidget* parent = nullptr)
+    CleanSpinBox(QWidget *parent = nullptr)
         : QDoubleSpinBox(parent), mode(Mode::Float) {
         setDecimals(3);
     }
@@ -186,7 +216,7 @@ protected:
         }
     }
 
-    double valueFromText(const QString& text) const override {
+    double valueFromText(const QString &text) const override {
         return text.toDouble();
     }
 
@@ -196,30 +226,35 @@ private:
 
 class CPPoorklMenuWidget : public QWidget {
     Q_OBJECT
+
 public:
-    CPPoorklMenuWidget(QWidget* parent = nullptr)
-        : QWidget(parent)
-    {
+    CPPoorklMenuWidget(QWidget *parent = nullptr)
+        : QWidget(parent) {
         tabs = new QTabWidget(this);
-        QVBoxLayout* layout = new QVBoxLayout(this);
+        QVBoxLayout *layout = new QVBoxLayout(this);
         layout->addWidget(tabs);
         setLayout(layout);
         setWindowFlags(Qt::FramelessWindowHint);
         // resize(200, 100);
         show();
+
+        /* Forward QTabWidget changes to our own signal */
+        connect(tabs, &QTabWidget::currentChanged, this, [this](int idx){
+            emit tabChanged(idx, tabs->tabText(idx));
+        });
     }
 
-    void addButton(const QString& tabName, const QString& name, std::function<void()> onClick) {
+    void addButton(const QString &tabName, const QString &name, std::function<void()> onClick) {
         auto tabLayout = tabLayouts[tabName];
         if (!tabLayout) return;
-        QPushButton* btn = new QPushButton(name);
+        QPushButton *btn = new QPushButton(name);
         connect(btn, &QPushButton::clicked, this, [=]() { onClick(); });
         tabLayout->addWidget(btn);
     }
 
-    void addTab(const QString& name) {
-        QWidget* tab = new QWidget();
-        QVBoxLayout* tabLayout = new QVBoxLayout(tab);
+    void addTab(const QString &name) {
+        QWidget *tab = new QWidget();
+        QVBoxLayout *tabLayout = new QVBoxLayout(tab);
         tab->setLayout(tabLayout);
         tabs->addTab(tab, name);
         tabContents[name] = tab;
@@ -227,18 +262,19 @@ public:
     }
 
 
-    void addFloatControl(const QString& tabName, const QString& name, float min, float max, float step, float& targetVariable) {
+    void addFloatControl(const QString &tabName, const QString &name, float min, float max, float step,
+                         float &targetVariable) {
         auto tabLayout = tabLayouts[tabName];
         if (!tabLayout) return;
-        QWidget* container = new QWidget();
-        QHBoxLayout* rowLayout = new QHBoxLayout(container);
+        QWidget *container = new QWidget();
+        QHBoxLayout *rowLayout = new QHBoxLayout(container);
         rowLayout->setContentsMargins(0, 0, 0, 0);
 
-        QLabel* label = new QLabel(name);
+        QLabel *label = new QLabel(name);
         label->setAlignment(Qt::AlignRight | Qt::AlignVCenter);
         rowLayout->addWidget(label);
 
-        CleanSpinBox* spin = new CleanSpinBox();
+        CleanSpinBox *spin = new CleanSpinBox();
         spin->setMode(CleanSpinBox::Mode::Float);
         spin->setRange(min, max);
         spin->setSingleStep(step);
@@ -255,19 +291,19 @@ public:
         tabLayout->addWidget(container);
     }
 
-    void addIntControl(const QString& tabName, const QString& name, int min, int max, size_t& targetVariable) {
+    void addIntControl(const QString &tabName, const QString &name, int min, int max, size_t &targetVariable) {
         auto tabLayout = tabLayouts[tabName];
         if (!tabLayout) return;
-        QWidget* container = new QWidget();
-        QHBoxLayout* rowLayout = new QHBoxLayout(container);
+        QWidget *container = new QWidget();
+        QHBoxLayout *rowLayout = new QHBoxLayout(container);
         rowLayout->setContentsMargins(0, 0, 0, 0);
 
-        QLabel* label = new QLabel(name);
+        QLabel *label = new QLabel(name);
         label->setAlignment(Qt::AlignRight | Qt::AlignVCenter);
 
         rowLayout->addWidget(label);
 
-        CleanSpinBox* spin = new CleanSpinBox();
+        CleanSpinBox *spin = new CleanSpinBox();
         spin->setMode(CleanSpinBox::Mode::Integer);
         spin->setRange(min, max);
         spin->setSingleStep(1);
@@ -284,7 +320,7 @@ public:
         tabLayout->addWidget(container);
     }
 
-    void updateSpinboxValues(const QVector<float>& values) {
+    void updateSpinboxValues(const QVector<float> &values) {
         qDebug() << "Reached pointa";
         for (int i = 0; i < spinboxes.size() && i < values.size(); ++i) {
             qDebug() << "Reached pointa " << i;
@@ -294,22 +330,27 @@ public:
         }
     }
 
-    void addWidgetToTab(const QString& tabName, QWidget* widget) {
+    void addWidgetToTab(const QString &tabName, QWidget *widget) {
         auto tabLayout = tabLayouts.value(tabName, nullptr);
         if (tabLayout) {
             tabLayout->addWidget(widget);
         }
     }
 
+signals:
+    void parameterChanged();
+    /* Emitted whenever the user changes the active tab. */
+    void tabChanged(int index, const QString &name);
+
 protected:
     QPoint dragStartPos;
     bool dragging = false;
-    QTabWidget* tabs;
-    QMap<QString, QWidget*> tabContents;
-    QMap<QString, QVBoxLayout*> tabLayouts;
-    QVector<QDoubleSpinBox*> spinboxes;
+    QTabWidget *tabs;
+    QMap<QString, QWidget *> tabContents;
+    QMap<QString, QVBoxLayout *> tabLayouts;
+    QVector<QDoubleSpinBox *> spinboxes;
 
-    void mousePressEvent(QMouseEvent* event) override {
+    void mousePressEvent(QMouseEvent *event) override {
         if (event->button() == Qt::LeftButton) {
             dragStartPos = event->globalPosition().toPoint() - frameGeometry().topLeft();
             dragging = true;
@@ -317,29 +358,62 @@ protected:
         }
     }
 
-    void mouseMoveEvent(QMouseEvent* event) override {
+    void mouseMoveEvent(QMouseEvent *event) override {
         if (dragging && (event->buttons() & Qt::LeftButton)) {
             move(event->globalPosition().toPoint() - dragStartPos);
             event->accept();
         }
     }
 
-    void mouseReleaseEvent(QMouseEvent* event) override {
+    void mouseReleaseEvent(QMouseEvent *event) override {
         if (event->button() == Qt::LeftButton) {
             dragging = false;
             event->accept();
         }
     }
-signals:
-    void parameterChanged();
 };
+bool checkOK = true;
 
 class ParticleWidget : public QWidget {
     Q_OBJECT
+
 public:
-    ParticleWidget(QWidget* parent = nullptr)
-        : QWidget(parent)
-    {
+    void updatePresetList() {
+        fileList->clear();
+        QDir dir("presets");
+        QStringList files = dir.entryList(QDir::Files);
+        QMap<QString, QSet<QString>> groups;
+
+        for (const QString& file : files) {
+            QString prefix;
+            if (file.endsWith("-atlas.png"))
+                prefix = file.left(file.length() - 10);
+            else if (file.endsWith("-atlas.json"))
+                prefix = file.left(file.length() - 11);
+            else if (file.endsWith("-config.json"))
+                prefix = file.left(file.length() - 12);
+            else
+                continue;
+
+            groups[prefix].insert(file.section('-', -1));
+        }
+
+        for (auto it = groups.constBegin(); it != groups.constEnd(); ++it) {
+            const QSet<QString>& tags = it.value();
+
+            bool hasPng = tags.contains("atlas.png");
+            bool hasJson = tags.contains("atlas.json");
+            bool hasConfig = tags.contains("config.json");
+
+            if (hasPng && hasJson && hasConfig) {
+                fileList->addItem(it.key());
+            } else {
+                fileList->addItem("! " + it.key());
+            }
+        }
+    }
+    ParticleWidget(QWidget *parent = nullptr)
+        : QWidget(parent) {
         setAttribute(Qt::WA_TransparentForMouseEvents);
         setAttribute(Qt::WA_TranslucentBackground);
         setWindowFlags(Qt::FramelessWindowHint | Qt::WindowStaysOnTopHint | Qt::Tool);
@@ -349,18 +423,151 @@ public:
         loadSprites(QCoreApplication::applicationDirPath() + "/atlas.png", QCoreApplication::applicationDirPath() + "/atlas.json");
         loadStyle(QCoreApplication::applicationDirPath() + "/style.qss");
         loadFont(QCoreApplication::applicationDirPath() + "/font.ttf");
+        menu = new CPPoorklMenuWidget();
+        //THIS IS WHERE THE MAGIC HAPPENS
+        bool canupdater = true;
+        //autoupdate code start
+        httplib::Client cliUpd("https://raw.githubusercontent.com");
+        std::string updPath = "/la-creatura/spoorkl/main/version";
+        auto res = cliUpd.Get(updPath);
+        if (res && res->status == 200) {
+            int remoteVersion = std::stoi(std::regex_replace(res->body, std::regex("\\n"), ""));
+            std::string remoteVersionS = std::regex_replace(res->body, std::regex("\\n"), "");
+            if (remoteVersion > version) {
+                QMessageBox::StandardButton reply = QMessageBox::question(
+                    this,
+                    "update",
+                    "new version available! do you want to download it?",
+                    QMessageBox::Yes | QMessageBox::No
+                );
+                /*std::string filename = "updater.bat";
+                std::string content =
+                    "@echo off\n"
+                    "setlocal\n"
+                    "timeout /t 3 >nul\n"
+                    "echo searching for updated file\n"
+                    "set \"FILENAME=CPPOORKL_v"+remoteVersionS+".exe\"\n"
+                    "for /l %%i in (1,1,5) do (\n"
+                    "    if exist \"%%FILENAME%%\" (\n"
+                    "        start \"\" \"%%FILENAME%%\"\n"
+                    "        goto END\n"
+                    "    )\n"
+                    "    timeout /t 1 >nul\n"
+                    ")\n"
+                    "echo updated file not found, try running CPPOORKL_v"+remoteVersionS+".exe manually\n"
+                    ":END\n"
+                    "endlocal\n";
+                saveToFile(filename, content);*/
+                if (reply == QMessageBox::Yes) {
+                    std::string path2 = "/la-creatura/spoorkl/main/latest.exe";
+                    auto res = cliUpd.Get(path2);
+                    if (res && res->status == 200) {
+                        QFile sfile(QString::fromStdString("CPPOORKL_v" + remoteVersionS + ".exe"));
+                        if (sfile.open(QIODevice::WriteOnly)) {
+                            sfile.write(res->body.c_str(), static_cast<qint64>(res->body.size()));
+                            sfile.close();
+                        }
+                    } else {
+                        QString message = "could not download updated file";
+                        QMessageBox::critical(this, "update", message);
+                        canupdater = false;
+                    }
+                    if (canupdater) {
+                        std::string exeName = "CPPOORKL_v" + remoteVersionS + ".exe";
+                        WinExec(exeName.c_str(), SW_SHOW);
+                        QThread::sleep(1);
+                        ExitProcess(0);
+                    }
+                }
+            }
+        } else {
+            QMessageBox::warning(this, "update","could not connect to update server");
+        }
+        //autoupdate code end
+
+        //start preset browser setup
+        browserList = new QListWidget();
+        browserList->addItem("loading...");
+
+        connect(browserList, &QListWidget::itemClicked, this, [this](QListWidgetItem *item) {
+            if (item->text() != "hm, cant connect") {
+                QMessageBox::StandardButton reply = QMessageBox::question(
+                    this,
+                    "download?",
+                    "do you want to download " + item->text() + "?",
+                    QMessageBox::Yes | QMessageBox::No
+                );
+
+                if (reply == QMessageBox::Yes) {
+                    checkOK = true;
+                    httplib::Client cli("https://raw.githubusercontent.com");
+                    std::vector<std::string> remoteFiles = {
+                        "atlas.json",
+                        "config.json"
+                    };
+
+                    for (const auto& remoteFile : remoteFiles) {
+                        std::string path = "/AACCBB80/CPPoorkl_presets/main/" + item->text().toStdString() + "/" + remoteFile;
+                        auto res = cli.Get(path);
+                        if (res && res->status == 200) {
+                            saveToFile("presets/"+item->text().toStdString() + "-" + remoteFile, res->body);
+                        } else {
+
+                            QString message = "can't download \"" + item->text() + "/" + QString::fromStdString(remoteFile) + "\"";
+                            QMessageBox::critical(this, "error", message);
+                            checkOK = false;
+                        }
+                    }
+                    std::string path = "/AACCBB80/CPPoorkl_presets/main/" + item->text().toStdString() + "/atlas.png";
+                    auto res = cli.Get(path);
+                    if (res && res->status == 200) {
+                        QFile file("presets/"+item->text() + "-" + "atlas.png");
+                        if (file.open(QIODevice::WriteOnly)) {
+                            file.write(res->body.c_str(), static_cast<qint64>(res->body.size()));
+                            file.close();
+                        }
+                    } else {
+                        QString message = "can't download \"" + item->text() + "/atlas.png\"";
+                        QMessageBox::critical(this, "error", message);
+                        checkOK = false;
+                    }
+                    if (checkOK==true) {
+                        loadConfig("presets/"+item->text() + "-config.json", true);
+                        loadSprites("presets/"+item->text() + "-atlas.png", item->text() + "-atlas.json");
+                    } else {
+                        QMessageBox::critical(this, "error", "aborted automatically applying preset due to download errors");
+                    }
+                }
+            }
+        });
+
+        fileList = new QListWidget();
+        connect(fileList, &QListWidget::itemClicked, this, [this](QListWidgetItem *item) {
+            if (!(item->text().startsWith("!"))) {
+                loadConfig("presets/"+item->text() + "-config.json", true);
+                loadSprites("presets/"+item->text() + "-atlas.png", "presets/"+item->text() + "-atlas.json");
+            }
+        });
+
+        QString folderPath = QCoreApplication::applicationDirPath() + "/presets";
+        QDir dir(folderPath);
+        if (!dir.exists()) {
+            dir.mkpath(".");
+        }
+
 
         timer = new QTimer(this);
         connect(timer, &QTimer::timeout, this, &ParticleWidget::onTimeout);
         timer->start(16);
 
         setMouseTracking(true);
-        menu = new CPPoorklMenuWidget();
         menu->addTab("config");
         menu->addTab("spawn");
         menu->addTab("physics");
         menu->addTab("visual");
         menu->addTab("atlas");
+        menu->addTab("online"); //aaccbb80
+        menu->addTab("presets"); //aaccbb80
         menu->addTab("import");
         menu->addTab("export");
         menu->addTab("debug");
@@ -394,6 +601,41 @@ public:
         menu->addFloatControl("atlas", "green", 0.0f, 1.0f, 0.01f, config.green);
         menu->addFloatControl("atlas", "blue", 0.0f, 1.0f, 0.01f, config.blue);
 
+        QLabel* linklabel = new QLabel(QString(
+            "<table width='100%' style='font-size:8pt;'>"
+            "<tr>"
+            "<td align='left'>select preset to download</td>"
+            "<td align='right'><a href='https://github.com/AACCBB80/CPPoorkl_presets/blob/main/README.md'>upload</a></td>"
+            "</tr>"
+            "</table>"
+        ));
+        linklabel->setTextInteractionFlags(Qt::TextBrowserInteraction);
+        linklabel->setOpenExternalLinks(true);
+
+        menu->addWidgetToTab("online", linklabel);
+        menu->addWidgetToTab("online", browserList);
+        menu->addWidgetToTab("online", new QLabel(QString("<span style='font-size:5pt'>preset browser programmed by aaccbb80</span>")));
+
+        QLabel* linklabel2 = new QLabel(QString(
+            "<table width='100%' style='font-size:8pt;'>"
+            "<tr>"
+            "<td align='left'>select preset to apply</td>"
+            "<td align='right'><a href='#'>open folder</a></td>"
+            "</tr>"
+            "</table>"
+        ));
+        linklabel2->setTextInteractionFlags(Qt::TextBrowserInteraction);
+        linklabel2->setOpenExternalLinks(false);
+        connect(linklabel2, &QLabel::linkActivated, this, [=](const QString &) {
+            QString exePath = QCoreApplication::applicationDirPath();
+            QDesktopServices::openUrl(QUrl("file:///" + exePath + "/presets/"));
+        });
+
+        menu->addWidgetToTab("presets", linklabel2);
+        menu->addWidgetToTab("presets", fileList);
+        menu->addWidgetToTab("presets", new QLabel(QString("<span style='font-size:5pt'>preset list programmed by aaccbb80</span>")));
+
+
         menu->addButton("import", "import config", [this]() { importConfig(); });
         menu->addButton("import", "import style", [this]() { importStyle(); });
         menu->addButton("import", "import font", [this]() { importFont(); });
@@ -404,17 +646,61 @@ public:
         menu->addButton("export", "export font", [this]() { exportFont(); });
         menu->addButton("export", "export atlas", [this]() { exportSprites(); });
 
+
+
         menu->addButton("debug", "restart", [this]() { restartApp(); });
 
         fpsLabel = new QLabel("FPS: 0");
         particleCountLabel = new QLabel("Particles: 0");
-        QLabel* versionLabel = new QLabel(QString("Version: %1").arg(APP_VERSION));
 
         menu->addWidgetToTab("debug", fpsLabel);
         menu->addWidgetToTab("debug", particleCountLabel);
-        menu->addWidgetToTab("debug", versionLabel);
 
         frameTimer.start();
+
+        updatePresetList();
+
+        watcher = new QFileSystemWatcher(this);
+        watcher->addPath("presets");
+        connect(watcher, &QFileSystemWatcher::directoryChanged,
+                this, &ParticleWidget::updatePresetList);
+
+        connect(menu, &CPPoorklMenuWidget::tabChanged, this, [this](int, const QString &name) {
+        if (name != "online") return;
+
+        auto *worker = new QObject;
+            QThread *thread = QThread::create([this]() {
+    httplib::Client cli("https://raw.githubusercontent.com"); // ИДИ НАХУЙ
+
+    auto res = cli.Get("/AACCBB80/CPPoorkl_presets/refs/heads/main/list"); //im going to fucking kill myself
+    QString result; // я совираюсь трахнуть себя в РОТ :heart_on_fire:
+    if (res && res->status == 200)
+        result = QString::fromStdString(res->body); // ще се изчукам в устата UwU
+    // this wasn't a UI issue, oops.
+    QMetaObject::invokeMethod(QApplication::instance(), [this, result]() {
+        if (!browserList) return;
+        browserList->clear();
+        if (result.isEmpty()) { // RESULT IS NOT FUCKING EMPTY (yes it was)
+            browserList->addItems({
+                "hm, cant connect",
+            });
+        } else {
+            const auto lines = result.split('\n', Qt::SkipEmptyParts);
+            for (const QString &line : lines)
+                browserList->addItem(line.trimmed());
+        }
+    });
+});
+
+// this has been fixed; doesn't cause memory leaks anymore
+connect(thread, &QThread::finished, thread, &QObject::deleteLater);
+thread->start();
+
+    });
+
+
+
+
     }
 
     void exportConfig() {
@@ -435,7 +721,7 @@ public:
         loadConfig(path, true);
     }
 
-    void loadConfig(const QString& path, const bool updateSpinboxes) {
+    void loadConfig(const QString &path, const bool updateSpinboxes) {
         QFile file(path);
         if (!file.open(QIODevice::ReadOnly)) return;
         QJsonParseError err;
@@ -496,12 +782,12 @@ public:
         loadStyle(path);
     }
 
-    void loadStyle(const QString& path) {
+    void loadStyle(const QString &path) {
         QFile file(path);
 
         if (file.open(QIODevice::ReadOnly | QIODevice::Text)) {
             QString style = file.readAll();
-            QApplication* app = qobject_cast<QApplication*>(QApplication::instance());
+            QApplication *app = qobject_cast<QApplication *>(QApplication::instance());
             app->setStyleSheet(style);
         } else {
             QMessageBox::warning(this, "style load error", "failed to load style: " + path);
@@ -518,7 +804,7 @@ public:
         loadFont(path);
     }
 
-    void loadFont(const QString& path) {
+    void loadFont(const QString &path) {
         int fontId = QFontDatabase::addApplicationFont(path);
         if (fontId != -1) {
             QStringList families = QFontDatabase::applicationFontFamilies(fontId);
@@ -545,7 +831,7 @@ public:
         loadSprites(imagePath, jsonPath);
     }
 
-    void loadSprites(const QString& atlasPath, const QString& jsonPath) {
+    void loadSprites(const QString &atlasPath, const QString &jsonPath) {
         QImage image;
         if (!image.load(atlasPath)) {
             QMessageBox::warning(this, "atlas load error", "failed to load atlas image: " + atlasPath);
@@ -574,7 +860,7 @@ public:
             QRect rect(obj["x"].toInt(), obj["y"].toInt(), obj["w"].toInt(), obj["h"].toInt());
             QPointF offset(obj["ox"].toDouble(), obj["oy"].toDouble());
 
-            spriteRects[name] = SpriteFrame{ rect, offset };
+            spriteRects[name] = SpriteFrame{rect, offset};
         }
     }
 
@@ -585,32 +871,35 @@ public:
         QProcess::startDetached(executable, args);
         QCoreApplication::quit();
     }
+
 protected:
-    void paintEvent(QPaintEvent*) override {
+    void paintEvent(QPaintEvent *) override {
         QPainter p(this);
         p.setRenderHint(QPainter::Antialiasing, false);
         p.setRenderHint(QPainter::SmoothPixmapTransform, false);
         p.setCompositionMode(QPainter::CompositionMode_Plus); // PoS composition mode doesn't make glowy 3:<
         p.setOpacity(config.opacity);
 
-        for (const auto& particle : particles) {
+        for (const auto &particle: particles) {
             float ageRatio = std::max(particle.age / config.lifetime, 0.0f); // accounting for negative life
             float invAgeRatio = 1.0f - ageRatio;
             if (ageRatio > 1.0f) continue;
 
-            int frame = static_cast<int>(particle.age * config.animSpeed) % 2; // hardcoded like sprite ranks and variants
+            int frame = static_cast<int>(particle.age * config.animSpeed) % 2;
+            // hardcoded like sprite ranks and variants
             int originalRank = static_cast<int>(particle.rank);
             int scaledRank = qBound(0, qRound(originalRank * invAgeRatio), 2);
 
             QString key = QString("sparkle_%1_%2_%3")
-                              .arg(scaledRank)
-                              .arg(static_cast<int>(particle.variant))
-                              .arg(frame);
+                    .arg(scaledRank)
+                    .arg(static_cast<int>(particle.variant))
+                    .arg(frame);
             auto it = spriteRects.find(key);
             if (it == spriteRects.end()) continue;
-            const SpriteFrame& frameData = it.value();
+            const SpriteFrame &frameData = it.value();
 
-            float scaledScale = config.scale * invAgeRatio * (1.0f + config.shinePower * std::sin(particle.age * config.shineSpeed)); // 666
+            float scaledScale = config.scale * invAgeRatio * (1.0f + config.shinePower * std::sin(
+                                                                  particle.age * config.shineSpeed)); // 666
             QRect sourceRect = frameData.rect;
             QPointF offset = frameData.offset * scaledScale;
 
@@ -623,8 +912,8 @@ protected:
 
             p.drawPixmap(target, atlas, sourceRect);
         }
-
     }
+
 private slots:
     void onTimeout() {
         float dt = frameTimer.restart() / 1000.0f;
@@ -649,32 +938,36 @@ private slots:
         }
 
         if (localPos != lastPos) {
-            QPointF delta = catmullRomDerivative(lastLastLastPos,lastLastPos, lastPos, localPos, 0);
-            int count = std::min(int(delta.manhattanLength() / config.spawnSpeed), static_cast<int>(config.spawnLimit)); // should be a euclidean distance function
+            QPointF delta = catmullRomDerivative(lastLastLastPos, lastLastPos, lastPos, localPos, 0);
+            int count = ((std::min))(int(delta.manhattanLength() / config.spawnSpeed), static_cast<int>(config.spawnLimit));
+            // should be a euclidean distance function
 
             for (int i = 0; i < count; ++i) {
                 float t = i / float(count);
                 QPointF pos = catmullRom(lastLastLastPos, lastLastPos, lastPos, localPos, t);
 
-                QPointF vel = (catmullRomDerivative(lastLastLastPos,lastLastPos, lastPos, localPos, t) * config.wind) + (QPointF(
-                                static_cast<float>(QRandomGenerator::global()->generateDouble()-0.5),
-                                static_cast<float>(QRandomGenerator::global()->generateDouble()-0.5)) * config.spawnWind) +
-                              QPointF(config.spawnVX, config.spawnVY);
+                QPointF vel = (catmullRomDerivative(lastLastLastPos, lastLastPos, lastPos, localPos, t) * config.wind) +
+                              (QPointF(
+                                   static_cast<float>(QRandomGenerator::global()->generateDouble() - 0.5),
+                                   static_cast<float>(QRandomGenerator::global()->generateDouble() - 0.5)) * config.
+                               spawnWind);
 
                 Rank rank = static_cast<Rank>(QRandomGenerator::global()->bounded(0, 3));
                 Variant variant = static_cast<Variant>(QRandomGenerator::global()->bounded(0, 2));
-                particles.push_back({ pos, vel, static_cast<float>(QRandomGenerator::global()->generateDouble()-0.5) * config.lifeDelta, rank, variant });
+                particles.push_back({
+                    pos, vel, static_cast<float>(QRandomGenerator::global()->generateDouble() - 0.5) * config.lifeDelta,
+                    rank, variant
+                });
             }
 
             while (particles.size() > config.maxParticles)
                 particles.pop_front();
-
         }
 
-        for (auto& p : particles) {
+        for (auto &p: particles) {
             p.velocity += QPointF(
-                static_cast<float>(QRandomGenerator::global()->generateDouble()-0.5) * config.jitter * dt,
-                static_cast<float>(QRandomGenerator::global()->generateDouble()-0.5) * config.jitter * dt);
+                static_cast<float>(QRandomGenerator::global()->generateDouble() - 0.5) * config.jitter * dt,
+                static_cast<float>(QRandomGenerator::global()->generateDouble() - 0.5) * config.jitter * dt);
 
             p.pos += p.velocity * dt;
             QRect screenRect = this->rect();
@@ -724,21 +1017,21 @@ private:
         float t3 = t2 * t;
 
         return 0.5f * (
-           (2.0f * p1) +
-           (-p0 + p2) * t +
-           (2.0f * p0 - 5.0f * p1 + 4.0f * p2 - p3) * t2 +
-           (-p0 + 3.0f * p1 - 3.0f * p2 + p3) * t3
-        );
+                   (2.0f * p1) +
+                   (-p0 + p2) * t +
+                   (2.0f * p0 - 5.0f * p1 + 4.0f * p2 - p3) * t2 +
+                   (-p0 + 3.0f * p1 - 3.0f * p2 + p3) * t3
+               );
     }
 
     QPointF catmullRomDerivative(QPointF p0, QPointF p1, QPointF p2, QPointF p3, float t) {
         float t2 = t * t;
 
         return 0.5f * (
-           (-p0 + p2) +
-           2.0f * (2.0f * p0 - 5.0f * p1 + 4.0f * p2 - p3) * t +
-           3.0f * (-p0 + 3.0f * p1 - 3.0f * p2 + p3) * t2
-        );
+                   (-p0 + p2) +
+                   2.0f * (2.0f * p0 - 5.0f * p1 + 4.0f * p2 - p3) * t +
+                   3.0f * (-p0 + 3.0f * p1 - 3.0f * p2 + p3) * t2
+               );
     }
 
     QImage applyColourTransform(QImage img, float redFactor, float greenFactor, float blueFactor) {
@@ -746,7 +1039,7 @@ private:
             img = img.convertToFormat(QImage::Format_RGBA8888);
         }
 
-        uchar* data = img.bits();
+        uchar *data = img.bits();
         int numPixels = img.width() * img.height();
 
         for (int i = 0; i < numPixels; ++i) {
@@ -755,9 +1048,9 @@ private:
             uchar g = data[idx + 1];
             uchar b = data[idx + 2];
 
-            data[idx]     = std::min(255.0f, g + (redFactor   * r)); // g because r is used as a mask
-            data[idx + 1] = std::min(255.0f, g + (greenFactor * r));
-            data[idx + 2] = std::min(255.0f, b + (blueFactor * r));
+            data[idx] = ((std::min))(255.0f, g + (redFactor * r)); // g because r is used as a mask
+            data[idx + 1] = (std::min)(255.0f, g + (greenFactor * r));
+            data[idx + 2] = (std::min)(255.0f, b + (blueFactor * r));
             if (r == 255.0f && g == 255.0f && b == 255.0f) {
                 data[idx + 3] = std::clamp(data[idx + 3] * config.whiteOutline, 0.0f, 255.0f);
             } else if (r == 0.0f && g == 0.0f && b == 0.0f) {
@@ -767,30 +1060,33 @@ private:
         return img;
     }
 
-    QTimer* timer;
+    QTimer *timer;
     std::deque<Particle> particles; // should probably be some better class than deque, maybe object pooled
     QPoint lastPos;
     QPoint lastLastPos;
     QPoint lastLastLastPos; // peak naming convention
     QPixmap atlas;
-    CPPoorklMenuWidget* menu;
+    CPPoorklMenuWidget *menu;
     QMap<QString, SpriteFrame> spriteRects;
     ParticleConfig config;
     QElapsedTimer frameTimer;
     int frameCount = 0;
     float elapsedTime = 0.0f;
     int currentFPS = 0;
-    QLabel* fpsLabel = nullptr;
-    QLabel* particleCountLabel = nullptr;
+    QLabel *fpsLabel = nullptr;
+    QLabel *particleCountLabel = nullptr;
+    QListWidget *browserList = nullptr;
+    QListWidget *fileList = nullptr;
+    QFileSystemWatcher* watcher;
 };
 
-int main(int argc, char* argv[]) {
+int main(int argc, char *argv[]) {
     QApplication app(argc, argv);
     try {
         ParticleWidget w;
         w.showFullScreen();
         return app.exec();
-    } catch (const std::exception& e) {
+    } catch (const std::exception &e) {
         QMessageBox::critical(nullptr, "fatal error", e.what());
     } catch (...) {
         QMessageBox::critical(nullptr, "fatal error", "unknown exception occurred.");
