@@ -1,0 +1,23 @@
+{
+    "animSpeed": 10,
+    "blackOutline": 0.10000000149011612,
+    "blue": 0.10000000149011612,
+    "bounce": 1,
+    "friction": 0.8999999761581421,
+    "gravityX": 0,
+    "gravityY": 10,
+    "green": 0.6000000238418579,
+    "jitter": 25,
+    "lifeDelta": 1,
+    "lifetime": 1,
+    "maxParticles": 1000,
+    "red": 1,
+    "scale": 2.5,
+    "shinePower": 0.5,
+    "shineSpeed": 60,
+    "spawnLimit": 100,
+    "spawnSpeed": 10,
+    "spawnWind": 100,
+    "whiteOutline": 0.20000000298023224,
+    "wind": 10
+}
