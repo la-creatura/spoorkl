@@ -49,6 +49,8 @@ enum class Rank { Small = 0, Medium = 1, Large = 2 };
 
 enum class Variant { A = 0, B = 1 };
 
+bool reloadSprites = false;
+
 struct Particle {
     QPointF pos;
     QPointF velocity;
@@ -256,9 +258,10 @@ public:
 
 
     void addFloatControl(const QString &tabName, const QString &name, float min, float max, float step,
-                         float &targetVariable) {
-        auto tabLayout = tabLayouts[tabName];
+                      float &targetVariable) {
+        auto tabLayout = tabLayouts.value(tabName, nullptr);
         if (!tabLayout) return;
+
         QWidget *container = new QWidget();
         QHBoxLayout *rowLayout = new QHBoxLayout(container);
         rowLayout->setContentsMargins(0, 0, 0, 0);
@@ -274,15 +277,22 @@ public:
         spin->setValue(targetVariable);
         rowLayout->addWidget(spin);
 
+        // Connect the spinbox value change signal to update targetVariable
         connect(spin, QOverload<double>::of(&QDoubleSpinBox::valueChanged), this,
-                [&, label](double val) {
-                    targetVariable = static_cast<float>(val);
-                    emit parameterChanged();
-                });
+            [this, &targetVariable, name](double val) {
+                targetVariable = static_cast<float>(val);
+                emit parameterChanged();
+                if (name == "whiteOutline" || name == "blackOutline" ||
+                    name == "red" || name == "green" || name == "blue") {
+                    reloadSprites = true;
+                }
+            });
+
 
         spinboxes.append(spin);
         tabLayout->addWidget(container);
     }
+
 
     void addIntControl(const QString &tabName, const QString &name, int min, int max, size_t &targetVariable) {
         auto tabLayout = tabLayouts[tabName];
@@ -539,6 +549,8 @@ public:
             }
         });
 
+
+
         QString folderPath = QCoreApplication::applicationDirPath() + "/presets";
         QDir dir(folderPath);
         if (!dir.exists()) {
@@ -590,6 +602,8 @@ public:
         menu->addFloatControl("atlas", "red", 0.0f, 1.0f, 0.01f, config.red);
         menu->addFloatControl("atlas", "green", 0.0f, 1.0f, 0.01f, config.green);
         menu->addFloatControl("atlas", "blue", 0.0f, 1.0f, 0.01f, config.blue);
+
+
 
         QLabel* linklabel = new QLabel(QString( // absolute cinema  - alice
             "<table width='100%' style='font-size:8pt;'>"
@@ -820,12 +834,14 @@ public:
 
     void loadSprites(const QString &atlasPath, const QString &jsonPath) {
         QImage image;
+
         if (!image.load(atlasPath)) {
             QMessageBox::warning(this, "atlas load error", "failed to load atlas image: " + atlasPath);
         }
         QImage shifted = applyColourTransform(image, config.red, config.green, config.blue);
         atlas = QPixmap::fromImage(shifted);
-
+        p_atlasPath = atlasPath;
+        p_atlasJsonPath = jsonPath;
         QFile file(jsonPath);
         if (!file.open(QIODevice::ReadOnly)) {
             QMessageBox::warning(this, "atlas load error", "failed to load atlas json: " + jsonPath);
@@ -866,6 +882,10 @@ protected:
         p.setRenderHint(QPainter::SmoothPixmapTransform, false);
         p.setCompositionMode(QPainter::CompositionMode_Plus); // PoS composition mode doesn't make glowy 3:<  - alice
         p.setOpacity(config.opacity);
+        if (reloadSprites) {
+            loadSprites(p_atlasPath, p_atlasJsonPath);
+            reloadSprites = false;
+        }
 
         for (const auto &particle: particles) {
             float ageRatio = qBound(0.0f, particle.age / config.lifetime, 1.0f); // this should always work with negative life   - alice
@@ -1064,6 +1084,9 @@ private:
     QListWidget *browserList = nullptr;
     QListWidget *fileList = nullptr;
     QFileSystemWatcher* watcher;
+    QString p_atlasPath;
+    QString p_atlasJsonPath;
+
 };
 
 int main(int argc, char *argv[]) {
