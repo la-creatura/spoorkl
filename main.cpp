@@ -47,9 +47,9 @@
 #endif
 
 // TODO
-// make buttons in tab for opening a mini text editor for the style and config and atlas.json
-// we should probably get more devs for this
-// a credits tab
+// make buttons in tab for opening a mini text editor for the style and config and atlas.json - acb: great idea, i might implement uploading to the preset browser from the app next
+// we should probably get more devs for this - acb: good lidar, but who knows CPP and also wants to code cppoorkl
+// a credits tab - acb: sure
 
 #define APP_VERSION 4
 
