@@ -34,14 +34,14 @@
 #include <QDesktopServices>
 #include <QFileSystemWatcher>
 
-#ifdef max // what is this  - alice
-#undef max // you'll never know. (it's to make it not complain about includes) - acb
-#endif
+QStringList credits = {
+    "alice - main developer of CPPoorkl",
+    "aaccbb80 - networking features"
+};
 
 // TODO
 // make buttons in tab for opening a mini text editor for the style and config and atlas.json - acb: great idea, i might implement uploading to the preset browser from the app next
 // we should probably get more devs for this - acb: good lidar, but who knows CPP and also wants to code cppoorkl
-// a credits tab - acb: sure
 
 #define APP_VERSION 4
 
@@ -549,6 +549,11 @@ public:
             }
         });
 
+        creditsList = new QListWidget();
+        for (const QString &item : credits) {
+            creditsList->addItem(item);
+        }
+        creditsList->setObjectName("creditsList");
 
 
         QString folderPath = QCoreApplication::applicationDirPath() + "/presets";
@@ -573,6 +578,8 @@ public:
         menu->addTab("import");
         menu->addTab("export");
         menu->addTab("debug");
+        menu->addTab("credits");
+        menu->addTab("exit");
 
         menu->addFloatControl("config", "lifetime", -1e9f, 1e9f, 0.01f, config.lifetime);
         menu->addFloatControl("config", "lifeDelta", -1e9f, 1e9f, 0.01f, config.lifeDelta);
@@ -653,6 +660,8 @@ public:
 
         menu->addButton("debug", "restart", [this]() { restartApp(); });
 
+        menu->addWidgetToTab("credits", creditsList);
+
         fpsLabel = new QLabel("FPS: 0");
         particleCountLabel = new QLabel("Particles: 0");
 
@@ -669,7 +678,9 @@ public:
                 this, &ParticleWidget::updatePresetList);
 
         connect(menu, &CPPoorklMenuWidget::tabChanged, this, [this](int, const QString &name) {
+            if (name == "exit") {exit(0);}
             if (name != "online") return;
+
 
             // auto *worker = new QObject;
             QThread *thread = QThread::create([this]() {
@@ -1086,6 +1097,7 @@ private:
     QFileSystemWatcher* watcher;
     QString p_atlasPath;
     QString p_atlasJsonPath;
+    QListWidget *creditsList = nullptr;
 
 };
 
