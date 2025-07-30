@@ -93,12 +93,12 @@ endif()
 
 # а смуглянка-молдаванка
 # отвечала парню в лад
-#... finished installing, fuck you openssl
+#... finished installing, f**k you openssl
 
 
 
 add_compile_options(/RTC1)
-# sunny you gonna have a hell of a time installing all this shit
+# sunny you gonna have a hell of a time installing all this s**t
 
 #target_include_directories(CPPoorkl PRIVATE ${CURL_INCLUDE_DIR})
 target_link_libraries(CPPoorkl PRIVATE
