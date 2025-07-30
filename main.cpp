@@ -43,7 +43,7 @@
 #include <QFileSystemWatcher>
 
 #ifdef max // what is this  - alice
-#undef max
+#undef max // you'll never know. (it's to make it not complain about includes) - acb
 #endif
 
 // TODO
