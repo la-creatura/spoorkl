@@ -36,20 +36,22 @@
 #include <iostream>
 #include <fstream>
 #include <string>
-#define CPPHTTPLIB_OPENSSL_SUPPORT // fuck you
-#include <openssl/ssl.h> // fuck you
-#include "httplib.h" // and fuck you
+#define CPPHTTPLIB_OPENSSL_SUPPORT // f**k you
+#include <openssl/ssl.h> // f**k you
+#include "httplib.h" // and f**k you
 #include <QDesktopServices>
 #include <QFileSystemWatcher>
 
-#ifdef max
+#ifdef max // what is this  - alice
 #undef max
 #endif
 
 // TODO
 // make buttons in tab for opening a mini text editor for the style and config and atlas.json
+// we should probably get more devs for this
+// a credits tab
 
-int version = 4;
+#define APP_VERSION 4
 
 enum class Rank { Small = 0, Medium = 1, Large = 2 };
 
@@ -238,7 +240,6 @@ public:
         // resize(200, 100);
         show();
 
-        /* Forward QTabWidget changes to our own signal */
         connect(tabs, &QTabWidget::currentChanged, this, [this](int idx){
             emit tabChanged(idx, tabs->tabText(idx));
         });
@@ -321,9 +322,7 @@ public:
     }
 
     void updateSpinboxValues(const QVector<float> &values) {
-        qDebug() << "Reached pointa";
         for (int i = 0; i < spinboxes.size() && i < values.size(); ++i) {
-            qDebug() << "Reached pointa " << i;
             spinboxes[i]->blockSignals(true);
             spinboxes[i]->setValue(values[i]);
             spinboxes[i]->blockSignals(false);
@@ -339,7 +338,6 @@ public:
 
 signals:
     void parameterChanged();
-    /* Emitted whenever the user changes the active tab. */
     void tabChanged(int index, const QString &name);
 
 protected:
@@ -384,7 +382,7 @@ public:
         QStringList files = dir.entryList(QDir::Files);
         QMap<QString, QSet<QString>> groups;
 
-        for (const QString& file : files) {
+        for (const QString& file : files) { // cpp11 range-loop might detach qt container (qstringlist)  - alice
             QString prefix;
             if (file.endsWith("-atlas.png"))
                 prefix = file.left(file.length() - 10);
@@ -433,7 +431,7 @@ public:
         if (res && res->status == 200) {
             int remoteVersion = std::stoi(std::regex_replace(res->body, std::regex("\\n"), ""));
             std::string remoteVersionS = std::regex_replace(res->body, std::regex("\\n"), "");
-            if (remoteVersion > version) {
+            if (remoteVersion > APP_VERSION) {
                 QMessageBox::StandardButton reply = QMessageBox::question(
                     this,
                     "update",
@@ -481,7 +479,7 @@ public:
                 }
             }
         } else {
-            QMessageBox::warning(this, "update","could not connect to update server");
+            QMessageBox::warning(this, "update", "could not connect to update server");
         }
         //autoupdate code end
 
@@ -566,7 +564,7 @@ public:
         menu->addTab("physics");
         menu->addTab("visual");
         menu->addTab("atlas");
-        menu->addTab("online"); //aaccbb80
+        menu->addTab("online"); //aaccbb80  goog job  - alice
         menu->addTab("presets"); //aaccbb80
         menu->addTab("import");
         menu->addTab("export");
@@ -601,7 +599,7 @@ public:
         menu->addFloatControl("atlas", "green", 0.0f, 1.0f, 0.01f, config.green);
         menu->addFloatControl("atlas", "blue", 0.0f, 1.0f, 0.01f, config.blue);
 
-        QLabel* linklabel = new QLabel(QString(
+        QLabel* linklabel = new QLabel(QString( // absolute cinema  - alice
             "<table width='100%' style='font-size:8pt;'>"
             "<tr>"
             "<td align='left'>select preset to download</td>"
@@ -616,7 +614,7 @@ public:
         menu->addWidgetToTab("online", browserList);
         menu->addWidgetToTab("online", new QLabel(QString("<span style='font-size:5pt'>preset browser programmed by aaccbb80</span>")));
 
-        QLabel* linklabel2 = new QLabel(QString(
+        QLabel* linklabel2 = new QLabel(QString( // absolute cinema 2  - alice
             "<table width='100%' style='font-size:8pt;'>"
             "<tr>"
             "<td align='left'>select preset to apply</td>"
@@ -633,7 +631,7 @@ public:
 
         menu->addWidgetToTab("presets", linklabel2);
         menu->addWidgetToTab("presets", fileList);
-        menu->addWidgetToTab("presets", new QLabel(QString("<span style='font-size:5pt'>preset list programmed by aaccbb80</span>")));
+        menu->addWidgetToTab("presets", new QLabel(QString("<span style='font-size:5pt'>preset list programmed by aaccbb80</span>"))); // acb what's w/ you using html for this ;w;  - alice
 
 
         menu->addButton("import", "import config", [this]() { importConfig(); });
@@ -645,7 +643,6 @@ public:
         menu->addButton("export", "export style", [this]() { exportStyle(); });
         menu->addButton("export", "export font", [this]() { exportFont(); });
         menu->addButton("export", "export atlas", [this]() { exportSprites(); });
-
 
 
         menu->addButton("debug", "restart", [this]() { restartApp(); });
@@ -666,41 +663,39 @@ public:
                 this, &ParticleWidget::updatePresetList);
 
         connect(menu, &CPPoorklMenuWidget::tabChanged, this, [this](int, const QString &name) {
-        if (name != "online") return;
+            if (name != "online") return;
 
-        auto *worker = new QObject;
+            // auto *worker = new QObject;
             QThread *thread = QThread::create([this]() {
-    httplib::Client cli("https://raw.githubusercontent.com"); // ИДИ НАХУЙ
+                httplib::Client cli("https://raw.githubusercontent.com"); //ИДИ НА**Й
 
-    auto res = cli.Get("/AACCBB80/CPPoorkl_presets/refs/heads/main/list"); //im going to fucking kill myself
-    QString result; // я совираюсь трахнуть себя в РОТ :heart_on_fire:
-    if (res && res->status == 200)
-        result = QString::fromStdString(res->body); // ще се изчукам в устата UwU
-    // this wasn't a UI issue, oops.
-    QMetaObject::invokeMethod(QApplication::instance(), [this, result]() {
-        if (!browserList) return;
-        browserList->clear();
-        if (result.isEmpty()) { // RESULT IS NOT FUCKING EMPTY (yes it was)
-            browserList->addItems({
-                "hm, cant connect",
+                auto res = cli.Get("/AACCBB80/CPPoorkl_presets/refs/heads/main/list"); //im going to f***ing k*** myself
+                QString result; // я совираюсь т**хнуть себя в РОТ :heart_on_fire:
+
+                if (res && res->status == 200)
+                    result = QString::fromStdString(res->body); // ще се из***ам в устата UwU
+
+                // this wasn't a UI issue, oops.
+                QMetaObject::invokeMethod(QApplication::instance(), [this, result]() {
+                    if (!browserList) return;
+                    browserList->clear();
+                    if (result.isEmpty()) { // RESULT IS NOT F**KING EMPTY (yes it was)
+                        browserList->addItems({
+                            "hm, cant connect",
+                        });
+                    } else {
+                        const auto lines = result.split('\n', Qt::SkipEmptyParts);
+                        for (const QString &line : lines)
+                            browserList->addItem(line.trimmed());
+                    }
+                });
             });
-        } else {
-            const auto lines = result.split('\n', Qt::SkipEmptyParts);
-            for (const QString &line : lines)
-                browserList->addItem(line.trimmed());
-        }
-    });
-});
 
-// this has been fixed; doesn't cause memory leaks anymore
-connect(thread, &QThread::finished, thread, &QObject::deleteLater);
-thread->start();
+            // this has been fixed; doesn't cause memory leaks anymore
+            connect(thread, &QThread::finished, thread, &QObject::deleteLater);
+            thread->start();
 
-    });
-
-
-
-
+        });
     }
 
     void exportConfig() {
@@ -877,16 +872,16 @@ protected:
         QPainter p(this);
         p.setRenderHint(QPainter::Antialiasing, false);
         p.setRenderHint(QPainter::SmoothPixmapTransform, false);
-        p.setCompositionMode(QPainter::CompositionMode_Plus); // PoS composition mode doesn't make glowy 3:<
+        p.setCompositionMode(QPainter::CompositionMode_Plus); // PoS composition mode doesn't make glowy 3:<  - alice
         p.setOpacity(config.opacity);
 
         for (const auto &particle: particles) {
-            float ageRatio = std::max(particle.age / config.lifetime, 0.0f); // accounting for negative life
+            float ageRatio = qBound(0.0f, particle.age / config.lifetime, 1.0f); // this should always work with negative life   - alice
             float invAgeRatio = 1.0f - ageRatio;
             if (ageRatio > 1.0f) continue;
 
             int frame = static_cast<int>(particle.age * config.animSpeed) % 2;
-            // hardcoded like sprite ranks and variants
+            // hardcoded like sprite ranks and variants until cppoorkl supports custom renderers  - alice
             int originalRank = static_cast<int>(particle.rank);
             int scaledRank = qBound(0, qRound(originalRank * invAgeRatio), 2);
 
@@ -898,8 +893,7 @@ protected:
             if (it == spriteRects.end()) continue;
             const SpriteFrame &frameData = it.value();
 
-            float scaledScale = config.scale * invAgeRatio * (1.0f + config.shinePower * std::sin(
-                                                                  particle.age * config.shineSpeed)); // 666
+            float scaledScale = config.scale * invAgeRatio * (1.0f + config.shinePower * std::sin(particle.age * config.shineSpeed)); // 666
             QRect sourceRect = frameData.rect;
             QPointF offset = frameData.offset * scaledScale;
 
@@ -940,7 +934,7 @@ private slots:
         if (localPos != lastPos) {
             QPointF delta = catmullRomDerivative(lastLastLastPos, lastLastPos, lastPos, localPos, 0);
             int count = ((std::min))(int(delta.manhattanLength() / config.spawnSpeed), static_cast<int>(config.spawnLimit));
-            // should be a euclidean distance function
+            // should be a euclidean distance function  - alice
 
             for (int i = 0; i < count; ++i) {
                 float t = i / float(count);
@@ -974,7 +968,7 @@ private slots:
 
             if (config.bounce > 0.0f) {
                 if (!screenRect.contains(p.pos.toPoint())) {
-                    p.age = config.lifetime + 1.0f; // mark for deletion
+                    p.age = config.lifetime + 1.0f;
                 }
             } else {
                 if (p.pos.x() < 0.0f) {
@@ -994,7 +988,7 @@ private slots:
                 }
             }
 
-            p.velocity *= config.friction; // TODO: these should be affected by dt too
+            p.velocity *= config.friction; // TODO: these should be affected by dt too but im alazy  - alice
             p.velocity.setX(p.velocity.x() + config.gravityX);
             p.velocity.setY(p.velocity.y() + config.gravityY);
             p.age += dt;
@@ -1048,7 +1042,7 @@ private:
             uchar g = data[idx + 1];
             uchar b = data[idx + 2];
 
-            data[idx] = ((std::min))(255.0f, g + (redFactor * r)); // g because r is used as a mask
+            data[idx] = ((std::min))(255.0f, g + (redFactor * r)); // g because r is used as a mask  - alice
             data[idx + 1] = (std::min)(255.0f, g + (greenFactor * r));
             data[idx + 2] = (std::min)(255.0f, b + (blueFactor * r));
             if (r == 255.0f && g == 255.0f && b == 255.0f) {
@@ -1061,10 +1055,10 @@ private:
     }
 
     QTimer *timer;
-    std::deque<Particle> particles; // should probably be some better class than deque, maybe object pooled
+    std::deque<Particle> particles; // should probably be some better class than deque, maybe object pooled  - alice
     QPoint lastPos;
     QPoint lastLastPos;
-    QPoint lastLastLastPos; // peak naming convention
+    QPoint lastLastLastPos; // peak naming convention  - alice
     QPixmap atlas;
     CPPoorklMenuWidget *menu;
     QMap<QString, SpriteFrame> spriteRects;

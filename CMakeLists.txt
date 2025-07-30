@@ -10,10 +10,16 @@ set(CMAKE_AUTORCC ON)
 
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
-
+set(OPENSSL_ROOT_DIR "D:/Qt/Tools/OpenSSLv3/Win_x64")
+set(OPENSSL_INCLUDE_DIR "${OPENSSL_ROOT_DIR}/include")
+set(OPENSSL_CRYPTO_LIBRARY "${OPENSSL_ROOT_DIR}/lib/libcrypto.lib")
+set(OPENSSL_SSL_LIBRARY "${OPENSSL_ROOT_DIR}/lib/libssl.lib")
+set(OPENSSL_LIBRARIES ${OPENSSL_SSL_LIBRARY} ${OPENSSL_CRYPTO_LIBRARY})
 
 find_package(Qt6 REQUIRED COMPONENTS Core Widgets)
 find_package(OpenSSL REQUIRED)
+
+include_directories(${OPENSSL_INCLUDE_DIR})
 
 #find_package(CURL REQUIRED)
 
@@ -100,8 +106,12 @@ target_link_libraries(CPPoorkl PRIVATE
         Qt6::Core
 
 )
+
 target_link_libraries(CPPoorkl PRIVATE OpenSSL::SSL OpenSSL::Crypto)
 
+if(MSVC)
+    target_link_libraries(CPPoorkl PRIVATE OpenSSL::applink)
+endif()
 
 #target_link_options(CPPoorkl PRIVATE "/SUBSYSTEM:CONSOLE")
 
