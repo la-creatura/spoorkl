@@ -3,7 +3,7 @@ A desktop particle mouse trail (for windows >:3)
 
 # contributors
 - [alice](https://github.com/la-creatura) - main developer
-- [aaccbb80](https://github.com/AACCBB80) - networking features
+- [aaccbb80](https://github.com/AACCBB80) - networking, hotkeys, presets
 
 # libraries and assets used
 - [Qt 6.9.1](https://github.com/qt/qtbase)
