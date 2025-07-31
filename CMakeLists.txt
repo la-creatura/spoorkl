@@ -10,16 +10,10 @@ set(CMAKE_AUTORCC ON)
 
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
-set(OPENSSL_ROOT_DIR "D:/Qt/Tools/OpenSSLv3/Win_x64")
-set(OPENSSL_INCLUDE_DIR "${OPENSSL_ROOT_DIR}/include")
-set(OPENSSL_CRYPTO_LIBRARY "${OPENSSL_ROOT_DIR}/lib/libcrypto.lib")
-set(OPENSSL_SSL_LIBRARY "${OPENSSL_ROOT_DIR}/lib/libssl.lib")
-set(OPENSSL_LIBRARIES ${OPENSSL_SSL_LIBRARY} ${OPENSSL_CRYPTO_LIBRARY})
+
 
 find_package(Qt6 REQUIRED COMPONENTS Core Widgets)
 find_package(OpenSSL REQUIRED)
-
-include_directories(${OPENSSL_INCLUDE_DIR})
 
 #find_package(CURL REQUIRED)
 
@@ -93,25 +87,26 @@ endif()
 
 # а смуглянка-молдаванка
 # отвечала парню в лад
-#... finished installing, f**k you openssl
+#... finished installing, fuck you openssl
 
 
 
-add_compile_options(/RTC1)
-# sunny you gonna have a hell of a time installing all this s**t
+#add_compile_options(/RTC1)
+# sunny you gonna have a hell of a time installing all this shit
 
 #target_include_directories(CPPoorkl PRIVATE ${CURL_INCLUDE_DIR})
+
+add_subdirectory(external/QHotkey)
+
 target_link_libraries(CPPoorkl PRIVATE
         Qt6::Widgets
         Qt6::Core
-
 )
 
 target_link_libraries(CPPoorkl PRIVATE OpenSSL::SSL OpenSSL::Crypto)
 
-if(MSVC)
-    target_link_libraries(CPPoorkl PRIVATE OpenSSL::applink)
-endif()
+target_link_libraries(CPPoorkl PRIVATE QHotkey::QHotkey)
+
 
 #target_link_options(CPPoorkl PRIVATE "/SUBSYSTEM:CONSOLE")
 
@@ -134,11 +129,13 @@ set_target_properties(CPPoorkl PROPERTIES
 )
 
 
+
 include(GNUInstallDirs)
 install(TARGETS CPPoorkl
         BUNDLE DESTINATION .
         LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR}
         RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR}
 )
+
 
 qt_finalize_executable(CPPoorkl)
