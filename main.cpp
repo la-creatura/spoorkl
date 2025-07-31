@@ -33,10 +33,13 @@
 #include "httplib.h" // and f**k you
 #include <QDesktopServices>
 #include <QFileSystemWatcher>
+#include <QKeySequence>
+#include <QHotkey>
+#include <QObject>
 
 QStringList credits = {
     "alice - main developer of CPPoorkl",
-    "aaccbb80 - networking features"
+    "aaccbb80 - networking, hotkeys, presets"
 };
 
 // TODO
@@ -169,6 +172,41 @@ struct ParticleConfig {
         blue = getFloatOrDefault(o, "blue", blue);
     }
 };
+
+QMap<QString, QKeySequence> hotkeyMap;
+QMap<QString, QHotkey*> registeredHotkeys;
+
+QMap<QString, QKeySequence> loadHotkeys(const QString& path) {
+    QMap<QString, QKeySequence> map;
+    QFile file(path);
+    if (!file.open(QIODevice::ReadOnly | QIODevice::Text)) {
+        if (file.open(QIODevice::WriteOnly | QIODevice::Text)) {
+            QTextStream out(&file);
+            out << "#set hotkeys here, disable/comment with #\n";
+            out << "#toggle=Alt+X\n";
+            out << "#exit=Alt+Shift+X\n";
+            out << "#preset:default=Alt+Shift+X\n";
+            file.close();
+        }
+        return map;
+    }
+    QTextStream in(&file);
+    while (!in.atEnd()) {
+        QString line = in.readLine().trimmed();
+        if (line.isEmpty() || line.startsWith("#")) continue;
+
+        QStringList parts = line.split('=');
+        if (parts.size() != 2) continue;
+
+        QString action = parts[0].trimmed();
+        QKeySequence sequence(parts[1].trimmed());
+
+        if (!sequence.isEmpty())
+            map[action] = sequence;
+    }
+
+    return map;
+}
 
     void saveToFile(const std::string& filename, const std::string& content) {
         std::ofstream out(filename);
@@ -372,7 +410,10 @@ protected:
         }
     }
 };
+
 bool checkOK = true;
+QString savedPreset = "";
+bool pause = false;
 
 class ParticleWidget : public QWidget {
     Q_OBJECT
@@ -533,7 +574,7 @@ public:
                     }
                     if (checkOK==true) {
                         loadConfig("presets/"+item->text() + "-config.json", true);
-                        loadSprites("presets/"+item->text() + "-atlas.png", item->text() + "-atlas.json");
+                        loadSprites("presets/"+item->text() + "-atlas.png", "presets/"+item->text() + "-atlas.json");
                     } else {
                         QMessageBox::critical(this, "error", "aborted automatically applying preset due to download errors");
                     }
@@ -897,6 +938,11 @@ protected:
             loadSprites(p_atlasPath, p_atlasJsonPath);
             reloadSprites = false;
         }
+        if (savedPreset != "") {
+            loadConfig("presets/"+savedPreset + "-config.json", true);
+            loadSprites("presets/"+savedPreset + "-atlas.png", "presets/"+savedPreset + "-atlas.json");
+            savedPreset = "";
+        }
 
         for (const auto &particle: particles) {
             float ageRatio = qBound(0.0f, particle.age / config.lifetime, 1.0f); // this should always work with negative life   - alice
@@ -945,6 +991,7 @@ private slots:
             fpsLabel->setText(QString("FPS: %1").arg(currentFPS));
         if (particleCountLabel)
             particleCountLabel->setText(QString("Particles: %1").arg(particles.size()));
+        if (pause) return;
         QPoint globalPos = QCursor::pos();
         QPoint localPos = mapFromGlobal(globalPos);
         if (lastPos.isNull()) {
@@ -1101,11 +1148,62 @@ private:
 
 };
 
+/*class keyPressThing : public QObject {
+    Q_OBJECT
+public:
+    explicit keyPressThing(QObject *parent = nullptr) : QObject(parent) {}
+
+    bool eventFilter(QObject *watched, QEvent *event) override {
+        if (event->type() == QEvent::KeyPress) {
+            QKeyEvent *keyEvent = static_cast<QKeyEvent *>(event);
+            qDebug() << "Key pressed:" << keyEvent->key()
+                     << "on object:" << watched->objectName();
+        }
+        return false;
+    }
+};*/
+
+void registerHotkey(const QKeySequence& sequence, std::function<void()> callback) {
+    QHotkey* hotkey = new QHotkey(sequence, true, nullptr);
+    QObject::connect(hotkey, &QHotkey::activated, [callback]() {
+        callback();
+    });
+}
+
+void registerHotkeys(const QMap<QString, QKeySequence>& hotkeyMap) {
+    for (auto it = hotkeyMap.constBegin(); it != hotkeyMap.constEnd(); ++it) {
+        const QString& command = it.key();
+        const QKeySequence& sequence = it.value();
+
+        if (command == "toggle") {
+            registerHotkey(sequence, []() {
+                pause = !pause;
+            });
+        } else if (command == "exit") {
+            registerHotkey(sequence, []() {
+                exit(0);
+            });
+        } else if (command.startsWith("preset:")) {
+            QString presetName = command.mid(QString("preset:").length());
+            registerHotkey(sequence, [presetName]() {
+                savedPreset = presetName;
+            });
+        }
+    }
+}
+
+
 int main(int argc, char *argv[]) {
     QApplication app(argc, argv);
     try {
         ParticleWidget w;
         w.showFullScreen();
+        //keyPressThing *keyFilter = new keyPressThing();
+        //qApp->installEventFilter(keyFilter);
+        loadHotkeys("hotkeys.cfg");
+        QMap<QString, QKeySequence> hotkeyMap = loadHotkeys("hotkeys.cfg");
+        registerHotkeys(hotkeyMap);
+
         return app.exec();
     } catch (const std::exception &e) {
         QMessageBox::critical(nullptr, "fatal error", e.what());
