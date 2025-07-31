@@ -185,7 +185,7 @@ QMap<QString, QKeySequence> loadHotkeys(const QString& path) {
             out << "#set hotkeys here, disable/comment with #\n";
             out << "#toggle=Alt+X\n";
             out << "#exit=Alt+Shift+X\n";
-            out << "#preset:default=Alt+Shift+X\n";
+            out << "#preset:default=Alt+1\n";
             file.close();
         }
         return map;
