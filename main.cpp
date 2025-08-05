@@ -14,6 +14,7 @@
 #include <QPushButton>
 #include <QLabel>
 #include <QVBoxLayout>
+#include <QHBoxLayout>
 #include <QDoubleSpinBox>
 #include <QFont>
 #include <QFontDatabase>
@@ -36,6 +37,7 @@
 #include <QKeySequence>
 #include <QHotkey>
 #include <QObject>
+#include <QSaveFile>
 
 QStringList credits = {
     "alice - main developer of CPPoorkl",
@@ -46,13 +48,24 @@ QStringList credits = {
 // make buttons in tab for opening a mini text editor for the style and config and atlas.json - acb: great idea, i might implement uploading to the preset browser from the app next
 // we should probably get more devs for this - acb: good lidar, but who knows CPP and also wants to code cppoorkl
 
+// note
+// dear acb
+//
+// if you make global variables again
+// or use html when you can use cpp
+// or put shit everywhere
+// I will divorce y'orue heartbeat
+//
+//   kind regards, alice
+
+// hmm maybe
+
 #define APP_VERSION 4
 
 enum class Rank { Small = 0, Medium = 1, Large = 2 };
 
 enum class Variant { A = 0, B = 1 };
 
-bool reloadSprites = false;
 
 struct Particle {
     QPointF pos;
@@ -62,10 +75,12 @@ struct Particle {
     Variant variant;
 };
 
+
 struct SpriteFrame {
     QRect rect;
     QPointF offset;
 };
+
 
 struct ParticleConfig {
     float lifetime = 1.0f;
@@ -96,6 +111,8 @@ struct ParticleConfig {
     float red = 1.0f;
     float green = 0.6f;
     float blue = 0.1f;
+
+    void reset() { *this = ParticleConfig{}; }
 
     QJsonObject toJson() const {
         QJsonObject o;
@@ -163,6 +180,7 @@ struct ParticleConfig {
         animSpeed = getFloatOrDefault(o, "animSpeed", animSpeed);
         shineSpeed = getFloatOrDefault(o, "shineSpeed", shineSpeed);
         shinePower = getFloatOrDefault(o, "shinePower", shinePower);
+        opacity = getFloatOrDefault(o, "opacity", opacity);
         scale = getFloatOrDefault(o, "scale", scale);
 
         whiteOutline = getFloatOrDefault(o, "whiteOutline", whiteOutline);
@@ -173,50 +191,7 @@ struct ParticleConfig {
     }
 };
 
-QMap<QString, QKeySequence> hotkeyMap;
-QMap<QString, QHotkey*> registeredHotkeys;
 
-QMap<QString, QKeySequence> loadHotkeys(const QString& path) {
-    QMap<QString, QKeySequence> map;
-    QFile file(path);
-    if (!file.open(QIODevice::ReadOnly | QIODevice::Text)) {
-        if (file.open(QIODevice::WriteOnly | QIODevice::Text)) {
-            QTextStream out(&file);
-            out << "#set hotkeys here, disable/comment with #\n";
-            out << "#toggle=Alt+X\n";
-            out << "#exit=Alt+Shift+X\n";
-            out << "#preset:default=Alt+1\n";
-            file.close();
-        }
-        return map;
-    }
-    QTextStream in(&file);
-    while (!in.atEnd()) {
-        QString line = in.readLine().trimmed();
-        if (line.isEmpty() || line.startsWith("#")) continue;
-
-        QStringList parts = line.split('=');
-        if (parts.size() != 2) continue;
-
-        QString action = parts[0].trimmed();
-        QKeySequence sequence(parts[1].trimmed());
-
-        if (!sequence.isEmpty())
-            map[action] = sequence;
-    }
-
-    return map;
-}
-
-    void saveToFile(const std::string& filename, const std::string& content) {
-        std::ofstream out(filename);
-        if (out) {
-            out << content;
-            out.close();
-        } else {
-            std::cerr << "Failed to open file: " << filename << std::endl;
-        }
-    }
 
 class CleanSpinBox : public QDoubleSpinBox {
     Q_OBJECT
@@ -242,7 +217,7 @@ public:
     Mode getMode() const { return mode; }
 
 protected:
-    QString textFromValue(double value) const override {
+     QString textFromValue(double value) const override {
         if (mode == Mode::Integer) {
             return QString::number(static_cast<int>(value));
         } else {
@@ -257,6 +232,8 @@ protected:
 private:
     Mode mode;
 };
+
+
 
 class CPPoorklMenuWidget : public QWidget {
     Q_OBJECT
@@ -315,17 +292,11 @@ public:
         spin->setValue(targetVariable);
         rowLayout->addWidget(spin);
 
-        // Connect the spinbox value change signal to update targetVariable
         connect(spin, QOverload<double>::of(&QDoubleSpinBox::valueChanged), this,
-            [this, &targetVariable, name](double val) {
-                targetVariable = static_cast<float>(val);
-                emit parameterChanged();
-                if (name == "whiteOutline" || name == "blackOutline" ||
-                    name == "red" || name == "green" || name == "blue") {
-                    reloadSprites = true;
-                }
-            });
-
+                [this, &targetVariable, name](double val) {
+                    targetVariable = static_cast<float>(val);
+                    emit parameterChanged(name);
+                });
 
         spinboxes.append(spin);
         tabLayout->addWidget(container);
@@ -354,7 +325,7 @@ public:
         connect(spin, QOverload<double>::of(&QDoubleSpinBox::valueChanged), this,
                 [&, this](double val) {
                     targetVariable = static_cast<size_t>(val);
-                    emit parameterChanged();
+                    emit parameterChanged(name);
                 });
 
         spinboxes.append(spin);
@@ -369,15 +340,15 @@ public:
         }
     }
 
-    void addWidgetToTab(const QString &tabName, QWidget *widget) {
+    void addWidgetToTab(const QString &tabName, QWidget *widget) const {
         auto tabLayout = tabLayouts.value(tabName, nullptr);
         if (tabLayout) {
             tabLayout->addWidget(widget);
         }
     }
 
-signals:
-    void parameterChanged();
+    signals:
+        void parameterChanged(const QString& name);
     void tabChanged(int index, const QString &name);
 
 protected:
@@ -387,6 +358,7 @@ protected:
     QMap<QString, QWidget *> tabContents;
     QMap<QString, QVBoxLayout *> tabLayouts;
     QVector<QDoubleSpinBox *> spinboxes;
+
 
     void mousePressEvent(QMouseEvent *event) override {
         if (event->button() == Qt::LeftButton) {
@@ -411,48 +383,10 @@ protected:
     }
 };
 
-bool checkOK = true;
-QString savedPreset = "";
-bool pause = false;
-
 class ParticleWidget : public QWidget {
     Q_OBJECT
 
 public:
-    void updatePresetList() {
-        fileList->clear();
-        QDir dir("presets");
-        QStringList files = dir.entryList(QDir::Files);
-        QMap<QString, QSet<QString>> groups;
-
-        for (const QString& file : files) { // cpp11 range-loop might detach qt container (qstringlist)  - alice
-            QString prefix;
-            if (file.endsWith("-atlas.png"))
-                prefix = file.left(file.length() - 10);
-            else if (file.endsWith("-atlas.json"))
-                prefix = file.left(file.length() - 11);
-            else if (file.endsWith("-config.json"))
-                prefix = file.left(file.length() - 12);
-            else
-                continue;
-
-            groups[prefix].insert(file.section('-', -1));
-        }
-
-        for (auto it = groups.constBegin(); it != groups.constEnd(); ++it) {
-            const QSet<QString>& tags = it.value();
-
-            bool hasPng = tags.contains("atlas.png");
-            bool hasJson = tags.contains("atlas.json");
-            bool hasConfig = tags.contains("config.json");
-
-            if (hasPng && hasJson && hasConfig) {
-                fileList->addItem(it.key());
-            } else {
-                fileList->addItem("! " + it.key());
-            }
-        }
-    }
     ParticleWidget(QWidget *parent = nullptr)
         : QWidget(parent) {
         setAttribute(Qt::WA_TransparentForMouseEvents);
@@ -464,16 +398,28 @@ public:
         loadSprites(QCoreApplication::applicationDirPath() + "/atlas.png", QCoreApplication::applicationDirPath() + "/atlas.json");
         loadStyle(QCoreApplication::applicationDirPath() + "/style.qss");
         loadFont(QCoreApplication::applicationDirPath() + "/font.ttf");
+        registerHotkeys(loadHotkeys(QCoreApplication::applicationDirPath() + "/hotkeys.cfg"));
+        // it just needs to be separated into two clean threads for first getting the uh version and the other for getting the actual file executable m ok
+        // only the actual network part needs to be a in thread, not the messageboxes // oh (but it works?) i can take it out
+        // wait wat if this is split into two so it only gives messageboxes between the two parts
+        // maybe we use QTimer.singleShot or whatever the fuck it was called if qthread dies? i wish i knew what that meant ill go RTFM
+        // bai the uh code together thing OwO
+        // uhh like save it or smth idk copied :3
+        // ima be eepin soon like 10 minute
+        // yeah i see, i prob eat food in 10 minute
+        // what happense when i press this headphone buttonll;;ll;l;.,.,.,,. uhm
+        // failsafe just in case one of us
+        // accidentally puts newline in the version file
+            // Aug 1. 2025 - chat with alice on CodeTogether
         menu = new CPPoorklMenuWidget();
-        //THIS IS WHERE THE MAGIC HAPPENS
-        bool canupdater = true;
-        //autoupdate code start
         httplib::Client cliUpd("https://raw.githubusercontent.com");
         std::string updPath = "/la-creatura/spoorkl/main/version";
         auto res = cliUpd.Get(updPath);
+
         if (res && res->status == 200) {
-            int remoteVersion = std::stoi(std::regex_replace(res->body, std::regex("\\n"), ""));
             std::string remoteVersionS = std::regex_replace(res->body, std::regex("\\n"), "");
+            int remoteVersion = std::stoi(remoteVersionS);
+
             if (remoteVersion > APP_VERSION) {
                 QMessageBox::StandardButton reply = QMessageBox::question(
                     this,
@@ -481,52 +427,35 @@ public:
                     "new version available! do you want to download it?",
                     QMessageBox::Yes | QMessageBox::No
                 );
-                /*std::string filename = "updater.bat";
-                std::string content =
-                    "@echo off\n"
-                    "setlocal\n"
-                    "timeout /t 3 >nul\n"
-                    "echo searching for updated file\n"
-                    "set \"FILENAME=CPPOORKL_v"+remoteVersionS+".exe\"\n"
-                    "for /l %%i in (1,1,5) do (\n"
-                    "    if exist \"%%FILENAME%%\" (\n"
-                    "        start \"\" \"%%FILENAME%%\"\n"
-                    "        goto END\n"
-                    "    )\n"
-                    "    timeout /t 1 >nul\n"
-                    ")\n"
-                    "echo updated file not found, try running CPPOORKL_v"+remoteVersionS+".exe manually\n"
-                    ":END\n"
-                    "endlocal\n";
-                saveToFile(filename, content);*/
+
                 if (reply == QMessageBox::Yes) {
                     std::string path2 = "/la-creatura/spoorkl/main/latest.exe";
-                    auto res = cliUpd.Get(path2);
-                    if (res && res->status == 200) {
-                        QFile sfile(QString::fromStdString("CPPOORKL_v" + remoteVersionS + ".exe"));
-                        if (sfile.open(QIODevice::WriteOnly)) {
-                            sfile.write(res->body.c_str(), static_cast<qint64>(res->body.size()));
-                            sfile.close();
-                        }
-                    } else {
-                        QString message = "could not download updated file";
-                        QMessageBox::critical(this, "update", message);
-                        canupdater = false;
+                    auto res2 = cliUpd.Get(path2);
+
+                    if (!(res2 && res2->status == 200)) {
+                        QMessageBox::critical(this, "update", "could not download updated file");
+                        return;
                     }
-                    if (canupdater) {
-                        std::string exeName = "CPPOORKL_v" + remoteVersionS + ".exe";
-                        WinExec(exeName.c_str(), SW_SHOW);
-                        QThread::sleep(1);
-                        ExitProcess(0);
+
+                    QFile sfile(QString::fromStdString("CPPOORKL_v" + remoteVersionS + ".exe"));
+                    if (!sfile.open(QIODevice::WriteOnly)) {
+                        QMessageBox::critical(this, "update", "could not save updated file");
+                        return;
                     }
+
+                    sfile.write(res2->body.c_str(), static_cast<qint64>(res2->body.size()));
+                    sfile.close();
+
+                    std::string exeName = "CPPOORKL_v" + remoteVersionS + ".exe";
+                    WinExec(exeName.c_str(), SW_SHOW);
+                    QThread::sleep(1);
+                    ExitProcess(0);
                 }
             }
         } else {
             QMessageBox::warning(this, "update", "could not connect to update server");
         }
-        //autoupdate code end
 
-        //start preset browser setup
         browserList = new QListWidget();
         browserList->addItem("loading...");
 
@@ -542,7 +471,7 @@ public:
                 if (reply == QMessageBox::Yes) {
                     checkOK = true;
                     httplib::Client cli("https://6d6ldeoyebpfbivviclcauaejm.srv.us");
-                    std::vector<std::string> remoteFiles = {
+                    QVector<std::string> remoteFiles = {
                         "atlas.json",
                         "config.json"
                     };
@@ -551,11 +480,16 @@ public:
                         std::string path = "/script/CPPOORKL/" + item->text().toStdString() + "/" + remoteFile;
                         auto res = cli.Get(path);
                         if (res && res->status == 200) {
-                            saveToFile("presets/"+item->text().toStdString() + "-" + remoteFile, res->body);
+                            QString filename = "presets/"+item->text() + "-" + QString::fromStdString(remoteFile);
+                            QFile file(filename);
+                            if (file.open(QIODevice::WriteOnly | QIODevice::Text)) {
+                                QTextStream out(&file);
+                                out << QString::fromStdString(res->body);
+                            } else {
+                                QMessageBox::warning(this, "saving file error", "failed to open file: " + filename);
+                            }
                         } else {
-
-                            QString message = "can't download \"" + item->text() + "/" + QString::fromStdString(remoteFile) + "\"";
-                            QMessageBox::critical(this, "error", message);
+                            QMessageBox::critical(this, "server download error", "can't download \"" + item->text() + "/" + QString::fromStdString(remoteFile) + "\"");
                             checkOK = false;
                         }
                     }
@@ -591,18 +525,16 @@ public:
         });
 
         creditsList = new QListWidget();
-        for (const QString &item : credits) {
+        for (const QString &item : credits) { // cpp11 range-loop might detach qt container (qstringlist)  - alice
             creditsList->addItem(item);
         }
         creditsList->setObjectName("creditsList");
-
 
         QString folderPath = QCoreApplication::applicationDirPath() + "/presets";
         QDir dir(folderPath);
         if (!dir.exists()) {
             dir.mkpath(".");
         }
-
 
         timer = new QTimer(this);
         connect(timer, &QTimer::timeout, this, &ParticleWidget::onTimeout);
@@ -650,8 +582,7 @@ public:
         menu->addFloatControl("atlas", "red", 0.0f, 1.0f, 0.01f, config.red);
         menu->addFloatControl("atlas", "green", 0.0f, 1.0f, 0.01f, config.green);
         menu->addFloatControl("atlas", "blue", 0.0f, 1.0f, 0.01f, config.blue);
-
-
+        menu->addButton("atlas", "update atlas", [this]() { loadSprites(atlasImgPath, atlasJsonPath); });
 
         QLabel* linklabel = new QLabel(QString( // absolute cinema  - alice
             "<table width='100%' style='font-size:8pt;'>"
@@ -664,9 +595,13 @@ public:
         linklabel->setTextInteractionFlags(Qt::TextBrowserInteraction);
         linklabel->setOpenExternalLinks(true);
 
+        // QWidget* linkWidget = new QWidget();
+        // QHBoxLayout linkLayout = new QHBoxLayout();
+        // linkLayout.addWidget(QLabel("select preset to download"));
+        // linkWidget->setLayout(linkLayout);
+
         menu->addWidgetToTab("online", linklabel);
         menu->addWidgetToTab("online", browserList);
-        menu->addWidgetToTab("online", new QLabel(QString("<span style='font-size:5pt'>preset browser programmed by aaccbb80</span>")));
 
         QLabel* linklabel2 = new QLabel(QString( // absolute cinema 2  - alice
             "<table width='100%' style='font-size:8pt;'>"
@@ -685,8 +620,7 @@ public:
 
         menu->addWidgetToTab("presets", linklabel2);
         menu->addWidgetToTab("presets", fileList);
-        menu->addWidgetToTab("presets", new QLabel(QString("<span style='font-size:5pt'>preset list programmed by aaccbb80</span>"))); // acb what's w/ you using html for this ;w;  - alice
-
+        // acb what's w/ you using html for this ;w; removed since has credits, to avoid ur sins  - alice
 
         menu->addButton("import", "import config", [this]() { importConfig(); });
         menu->addButton("import", "import style", [this]() { importStyle(); });
@@ -701,16 +635,15 @@ public:
 
         menu->addButton("debug", "restart", [this]() { restartApp(); });
 
-        menu->addWidgetToTab("credits", creditsList);
-
         fpsLabel = new QLabel("FPS: 0");
         particleCountLabel = new QLabel("Particles: 0");
 
         menu->addWidgetToTab("debug", fpsLabel);
         menu->addWidgetToTab("debug", particleCountLabel);
 
-        frameTimer.start();
+        menu->addWidgetToTab("credits", creditsList);
 
+        frameTimer.start();
         updatePresetList();
 
         watcher = new QFileSystemWatcher(this);
@@ -718,42 +651,42 @@ public:
         connect(watcher, &QFileSystemWatcher::directoryChanged,
                 this, &ParticleWidget::updatePresetList);
 
-        connect(menu, &CPPoorklMenuWidget::tabChanged, this, [this](int, const QString &name) {
-            if (name == "exit") {exit(0);}
-            if (name != "online") return;
+        connect(menu, &CPPoorklMenuWidget::tabChanged, this, [this](int, const QString &name) { loadBrowser(name); });
+    }
 
+    void loadBrowser(const QString& name) {
+        if (name == "exit") {QCoreApplication::exit(0);}
+        if (name != "online") return;
 
-            // auto *worker = new QObject;
-            QThread *thread = QThread::create([this]() {
-                httplib::Client cli("https://6d6ldeoyebpfbivviclcauaejm.srv.us"); //ИДИ НА**Й
+        QThread *thread = QThread::create([this]() {
+            httplib::Client cli("https://6d6ldeoyebpfbivviclcauaejm.srv.us"); //ИДИ НА**Й
 
-                auto res = cli.Get("/script/CPPOORKL"); //im going to f***ing k*** myself
-                QString result; // я совираюсь т**хнуть себя в РОТ :heart_on_fire:
+            auto res = cli.Get("/script/CPPOORKL"); //im going to f***ing k*** myself
+            QString result;
 
-                if (res && res->status == 200)
-                    result = QString::fromStdString(res->body); // ще се из***ам в устата UwU
+            if (res && res->status == 200)
+                result = QString::fromStdString(res->body);
 
-                // this wasn't a UI issue, oops.
-                QMetaObject::invokeMethod(QApplication::instance(), [this, result]() {
-                    if (!browserList) return;
-                    browserList->clear();
-                    if (result.isEmpty()) { // RESULT IS NOT F**KING EMPTY (yes it was)
-                        browserList->addItems({
-                            "hm, cant connect",
-                        });
-                    } else {
-                        const auto lines = result.split('\n', Qt::SkipEmptyParts);
-                        for (const QString &line : lines)
-                            browserList->addItem(line.trimmed());
-                    }
-                });
+            // this wasn't a UI issue, oops.
+            QMetaObject::invokeMethod(QApplication::instance(), [this, result]() {  // what is this  - alice
+                                                                                                        // chatgpt garbage - acb
+                if (!browserList) return;
+                browserList->clear();
+                if (result.isEmpty()) { // RESULT IS NOT F**KING EMPTY (yes it was)
+                    browserList->addItems({
+                        "hm, cant connect",
+                    });
+                } else {
+                    const auto lines = result.split('\n', Qt::SkipEmptyParts);
+                    for (const QString &line : lines)
+                        browserList->addItem(line.trimmed());
+                }
             });
-
-            // this has been fixed; doesn't cause memory leaks anymore
-            connect(thread, &QThread::finished, thread, &QObject::deleteLater);
-            thread->start();
-
         });
+
+        // this has been fixed; doesn't cause memory leaks anymore
+        connect(thread, &QThread::finished, thread, &QObject::deleteLater);
+        thread->start();
     }
 
     void exportConfig() {
@@ -780,6 +713,7 @@ public:
         QJsonParseError err;
         QJsonDocument doc = QJsonDocument::fromJson(file.readAll(), &err);
         if (err.error != QJsonParseError::NoError) return;
+        config.reset();
         config.fromJson(doc.object());
         if (updateSpinboxes) {
             QVector<float> values = {
@@ -857,7 +791,7 @@ public:
         loadFont(path);
     }
 
-    void loadFont(const QString &path) {
+    static void loadFont(const QString &path) {
         int fontId = QFontDatabase::addApplicationFont(path);
         if (fontId != -1) {
             QStringList families = QFontDatabase::applicationFontFamilies(fontId);
@@ -892,8 +826,8 @@ public:
         }
         QImage shifted = applyColourTransform(image, config.red, config.green, config.blue);
         atlas = QPixmap::fromImage(shifted);
-        p_atlasPath = atlasPath;
-        p_atlasJsonPath = jsonPath;
+        atlasImgPath = atlasPath;
+        atlasJsonPath = jsonPath;
         QFile file(jsonPath);
         if (!file.open(QIODevice::ReadOnly)) {
             QMessageBox::warning(this, "atlas load error", "failed to load atlas json: " + jsonPath);
@@ -919,12 +853,119 @@ public:
         }
     }
 
-    void restartApp() {
+    static void restartApp() {
         QString executable = QCoreApplication::applicationFilePath();
         QStringList args = QCoreApplication::arguments();
 
         QProcess::startDetached(executable, args);
         QCoreApplication::quit();
+    }
+
+    void updatePresetList() {
+        fileList->clear();
+        QDir dir("presets");
+        QStringList files = dir.entryList(QDir::Files);
+        QMap<QString, QSet<QString>> groups;
+
+        for (const QString& file : files) { // cpp11 range-loop might detach qt container (qstringlist)  - alice
+            QString prefix;
+            if (file.endsWith("-atlas.png"))
+                prefix = file.left(file.length() - 10);
+            else if (file.endsWith("-atlas.json"))
+                prefix = file.left(file.length() - 11);
+            else if (file.endsWith("-config.json"))
+                prefix = file.left(file.length() - 12);
+            else
+                continue;
+
+            groups[prefix].insert(file.section('-', -1));
+        }
+
+        for (auto it = groups.constBegin(); it != groups.constEnd(); ++it) {
+            const QSet<QString>& tags = it.value();
+
+            bool hasPng = tags.contains("atlas.png");
+            bool hasJson = tags.contains("atlas.json");
+            bool hasConfig = tags.contains("config.json");
+
+            if (hasPng && hasJson && hasConfig) {
+                fileList->addItem(it.key());
+            } else {
+                fileList->addItem("! " + it.key());
+            }
+        }
+    }
+
+    static QMap<QString, QKeySequence> loadHotkeys(const QString& path) {
+        QMap<QString, QKeySequence> map;
+        QFile file(path);
+        if (!file.open(QIODevice::ReadOnly | QIODevice::Text)) {
+            if (file.open(QIODevice::WriteOnly | QIODevice::Text)) {
+                QTextStream out(&file);
+                out << "#set hotkeys here, disable/comment with #\n";
+                out << "#toggle=Alt+X\n";
+                out << "#exit=Alt+Shift+X\n";
+                out << "#preset:default=Alt+1\n";
+                file.close();
+            }
+            return map;
+        }
+        QTextStream in(&file);
+        while (!in.atEnd()) {
+            QString line = in.readLine().trimmed();
+            if (line.isEmpty() || line.startsWith("#")) continue;
+
+            QStringList parts = line.split('=');
+            if (parts.size() != 2) continue;
+
+            QString action = parts[0].trimmed();
+            QKeySequence sequence(parts[1].trimmed());
+
+            if (!sequence.isEmpty())
+                map[action] = sequence;
+        }
+
+        return map;
+    }
+
+    void saveToFile(const QString& filename, const QString& content) {
+        QFile file(filename);
+        if (file.open(QIODevice::WriteOnly | QIODevice::Text)) {
+            QTextStream out(&file);
+            out << content;
+        } else {
+            QMessageBox::warning(this, "saving file error", QString("failed to open file: " + filename));
+        }
+    }
+
+    static void registerHotkey(const QKeySequence& sequence, std::function<void()> callback) {
+        QHotkey* hotkey = new QHotkey(sequence, true, nullptr);
+        QObject::connect(hotkey, &QHotkey::activated, [callback]() {
+            callback();
+        });
+    }
+
+    void registerHotkeys(const QMap<QString, QKeySequence>& hotkeyMap) {
+        for (auto it = hotkeyMap.constBegin(); it != hotkeyMap.constEnd(); ++it) {
+            const QString& command = it.key();
+            const QKeySequence& sequence = it.value();
+
+            if (command == "toggle") {
+                registerHotkey(sequence, [this]() {
+                    pause = !pause;
+                });
+            } else if (command == "exit") {
+                registerHotkey(sequence, []() {
+                    QCoreApplication::exit(0);
+                });
+            } else if (command.startsWith("preset:")) {
+                QString presetName = command.mid(QString("preset:").length());
+                registerHotkey(sequence, [this, presetName]() {
+                    loadConfig("presets/" + presetName + "-config.json", true);
+                    loadSprites("presets/" + presetName + "-atlas.png", "presets/" + presetName + "-atlas.json");
+                });
+            }
+        }
     }
 
 protected:
@@ -934,15 +975,17 @@ protected:
         p.setRenderHint(QPainter::SmoothPixmapTransform, false);
         p.setCompositionMode(QPainter::CompositionMode_Plus); // PoS composition mode doesn't make glowy 3:<  - alice
         p.setOpacity(config.opacity);
-        if (reloadSprites) {
-            loadSprites(p_atlasPath, p_atlasJsonPath);
-            reloadSprites = false;
-        }
-        if (savedPreset != "") {
-            loadConfig("presets/"+savedPreset + "-config.json", true);
-            loadSprites("presets/"+savedPreset + "-atlas.png", "presets/"+savedPreset + "-atlas.json");
-            savedPreset = "";
-        }
+        // if (reloadSprites) {
+        //     loadSprites(p_atlasPath, p_atlasJsonPath);
+        //     reloadSprites = false;
+        // }
+        // if (savedPreset != "") {
+        //     loadConfig("presets/"+savedPreset + "-config.json", true);
+        //     loadSprites("presets/"+savedPreset + "-atlas.png", "presets/"+savedPreset + "-atlas.json");
+        //     savedPreset = "";
+        // }
+        // what the f**k why would you do that when qt is asking for a frame  - alice
+        // uhh because yes  - acb
 
         for (const auto &particle: particles) {
             float ageRatio = qBound(0.0f, particle.age / config.lifetime, 1.0f); // this should always work with negative life   - alice
@@ -1011,10 +1054,9 @@ private slots:
                 QPointF pos = catmullRom(lastLastLastPos, lastLastPos, lastPos, localPos, t);
 
                 QPointF vel = (catmullRomDerivative(lastLastLastPos, lastLastPos, lastPos, localPos, t) * config.wind) +
-                              (QPointF(
-                                   static_cast<float>(QRandomGenerator::global()->generateDouble() - 0.5),
-                                   static_cast<float>(QRandomGenerator::global()->generateDouble() - 0.5)) * config.
-                               spawnWind);
+                              (QPointF(static_cast<float>(QRandomGenerator::global()->generateDouble() - 0.5),
+                                       static_cast<float>(QRandomGenerator::global()->generateDouble() - 0.5)) * config.spawnWind) +
+                              QPointF(config.spawnVX, config.spawnVY);
 
                 Rank rank = static_cast<Rank>(QRandomGenerator::global()->bounded(0, 3));
                 Variant variant = static_cast<Variant>(QRandomGenerator::global()->bounded(0, 2));
@@ -1076,7 +1118,7 @@ private slots:
     }
 
 private:
-    QPointF catmullRom(QPointF p0, QPointF p1, QPointF p2, QPointF p3, float t) {
+    static QPointF catmullRom(QPointF p0, QPointF p1, QPointF p2, QPointF p3, float t) {
         float t2 = t * t;
         float t3 = t2 * t;
 
@@ -1088,7 +1130,7 @@ private:
                );
     }
 
-    QPointF catmullRomDerivative(QPointF p0, QPointF p1, QPointF p2, QPointF p3, float t) {
+    static QPointF catmullRomDerivative(QPointF p0, QPointF p1, QPointF p2, QPointF p3, float t) {
         float t2 = t * t;
 
         return 0.5f * (
@@ -1098,7 +1140,7 @@ private:
                );
     }
 
-    QImage applyColourTransform(QImage img, float redFactor, float greenFactor, float blueFactor) {
+    QImage applyColourTransform(QImage img, float redFactor, float greenFactor, float blueFactor) const {
         if (img.format() != QImage::Format_RGBA8888) {
             img = img.convertToFormat(QImage::Format_RGBA8888);
         }
@@ -1142,68 +1184,20 @@ private:
     QListWidget *browserList = nullptr;
     QListWidget *fileList = nullptr;
     QFileSystemWatcher* watcher;
-    QString p_atlasPath;
-    QString p_atlasJsonPath;
+    QString atlasImgPath;
+    QString atlasJsonPath;
     QListWidget *creditsList = nullptr;
-
+    QMap<QString, QKeySequence> hotkeyMap;
+    QMap<QString, QHotkey*> registeredHotkeys;
+    bool checkOK = true;
+    bool pause = false;
 };
-
-/*class keyPressThing : public QObject {
-    Q_OBJECT
-public:
-    explicit keyPressThing(QObject *parent = nullptr) : QObject(parent) {}
-
-    bool eventFilter(QObject *watched, QEvent *event) override {
-        if (event->type() == QEvent::KeyPress) {
-            QKeyEvent *keyEvent = static_cast<QKeyEvent *>(event);
-            qDebug() << "Key pressed:" << keyEvent->key()
-                     << "on object:" << watched->objectName();
-        }
-        return false;
-    }
-};*/
-
-void registerHotkey(const QKeySequence& sequence, std::function<void()> callback) {
-    QHotkey* hotkey = new QHotkey(sequence, true, nullptr);
-    QObject::connect(hotkey, &QHotkey::activated, [callback]() {
-        callback();
-    });
-}
-
-void registerHotkeys(const QMap<QString, QKeySequence>& hotkeyMap) {
-    for (auto it = hotkeyMap.constBegin(); it != hotkeyMap.constEnd(); ++it) {
-        const QString& command = it.key();
-        const QKeySequence& sequence = it.value();
-
-        if (command == "toggle") {
-            registerHotkey(sequence, []() {
-                pause = !pause;
-            });
-        } else if (command == "exit") {
-            registerHotkey(sequence, []() {
-                exit(0);
-            });
-        } else if (command.startsWith("preset:")) {
-            QString presetName = command.mid(QString("preset:").length());
-            registerHotkey(sequence, [presetName]() {
-                savedPreset = presetName;
-            });
-        }
-    }
-}
-
 
 int main(int argc, char *argv[]) {
     QApplication app(argc, argv);
     try {
         ParticleWidget w;
         w.showFullScreen();
-        //keyPressThing *keyFilter = new keyPressThing();
-        //qApp->installEventFilter(keyFilter);
-        loadHotkeys("hotkeys.cfg");
-        QMap<QString, QKeySequence> hotkeyMap = loadHotkeys("hotkeys.cfg");
-        registerHotkeys(hotkeyMap);
-
         return app.exec();
     } catch (const std::exception &e) {
         QMessageBox::critical(nullptr, "fatal error", e.what());
